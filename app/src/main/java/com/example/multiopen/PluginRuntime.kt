@@ -16,7 +16,9 @@ class PluginRuntime(host: Context, val app: VirtualApp, isolated: Boolean = fals
         // isolated=false：parent 用宿主 ClassLoader，plugin-api 的类共享（PluginActivity 模式）
         // isolated=true ：parent 用 BootClassLoader，插件自带所有依赖，行为接近独立 App（普通 APK 模式）
         val parent = if (isolated) host.classLoader.parent else host.classLoader
-        classLoader = DexClassLoader(app.apkFile.absolutePath, optDir.absolutePath, null, parent)
+        // librarySearchPath 指向实例自己解压出来的 so，System.loadLibrary 才能找到（微信等 native 依赖的前提）
+        val libPath = app.nativeLibDir.takeIf { it.isDirectory && it.list()?.isNotEmpty() == true }?.absolutePath
+        classLoader = DexClassLoader(app.apkFile.absolutePath, optDir.absolutePath, libPath, parent)
         val am = AssetManager::class.java.getDeclaredConstructor().newInstance()
         AssetManager::class.java.getMethod("addAssetPath", String::class.java).invoke(am, app.apkFile.absolutePath)
         resources = Resources(am, host.resources.displayMetrics, host.resources.configuration)

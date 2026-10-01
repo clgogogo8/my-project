@@ -21,7 +21,19 @@ gradle wrapper
    - [x] 3b-1：插件内 Activity 间跳转（`ExecHookInstrumentation` + `rewriteIntent`）、插件自己的 `Application`（`VirtualApplications`）、按 Activity 取主题（待真机验证，测试用 `test-multi`）
    - [ ] 3b-2：桩池（launchMode / 方向 / 透明主题）、Service / Broadcast / ContentProvider
    - [x] 数据隔离：`VirtualContext` 重定向 files/cache/databases/SharedPreferences 到实例目录（待真机验证）
-   - [ ] 3c：getPackageName 等伪装、getApplicationContext、外部存储、native so
+   - [~] 3c：伪装与路径
+     - [x] native so：按设备 ABI 从 APK 解出 `lib/<abi>/*.so`（`NativeLibs`），作为 `DexClassLoader` 的 librarySearchPath
+     - [x] `getApplicationInfo()` 伪装：包名 / dataDir / nativeLibraryDir / sourceDir 指向本实例（`VirtualContext`）
+     - [ ] `getPackageName()` / opPackageName 伪装：需先 hook `IActivityManager` 代理，否则 AMS 包名校验抛 SecurityException
+     - [ ] 外部存储重定向
 4. [ ] Service / Broadcast / ContentProvider / 通知
 5. [ ] Native 层路径重定向与设备信息伪装
 6. [ ] 兼容性适配（隐藏 API 限制、64/32 位 so）
+
+## 适配微信（WeChat）进度
+微信是重度 native + 多组件 App，跑起来还缺：
+- [x] native 库解压与加载（否则 `System.loadLibrary("wechatxxx")` 直接崩）
+- [x] `ApplicationInfo` 路径伪装（微信大量读自身 dataDir / nativeLibraryDir）
+- [ ] `IActivityManager` 代理 hook → 安全伪装 `getPackageName`（微信几乎处处校验自身包名）
+- [ ] Service / BroadcastReceiver / ContentProvider（FileProvider 分享、推送、后台保活）
+- [ ] 多桩池（不同 launchMode / 竖屏锁定 / 透明主题）

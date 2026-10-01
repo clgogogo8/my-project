@@ -2,6 +2,7 @@ package com.example.multiopen
 
 import android.app.Application
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.res.AssetManager
 import android.content.res.Resources
 import android.content.ContextWrapper
@@ -14,7 +15,9 @@ import java.io.FileOutputStream
 
 /**
  * 包在插件 Activity 外层的 Context，把数据相关路径重定向到实例私有目录，实现多开的数据隔离。
- * 暂未处理：getPackageName（改了会让系统服务的包名校验失败）、外部存储、getApplicationContext()（仍是宿主）。
+ * getApplicationInfo() 伪装成插件自己的（包名/数据目录/native 目录/APK 路径），很多 App 和库读这里拿路径。
+ * 仍未处理：getPackageName()——直接改会让 startActivity 等走到 AMS 的 binder 调用时包名与宿主 uid 不符而抛
+ * SecurityException，需要先 hook IActivityManager 代理才能安全伪装（下一步路线图）。外部存储同理待办。
  */
 class VirtualContext(
     base: Context,
@@ -27,6 +30,25 @@ class VirtualContext(
     override fun getAssets(): AssetManager = runtime?.resources?.assets ?: super.getAssets()
     override fun getClassLoader(): ClassLoader = runtime?.classLoader ?: super.getClassLoader()
     override fun getApplicationContext(): Context = appProvider() ?: super.getApplicationContext()
+
+    /** 用插件 APK 自身的 ApplicationInfo，并把 so/数据/APK 路径改到本实例目录 */
+    private val appInfo: ApplicationInfo by lazy {
+        val app = runtime?.app
+        val info = app?.let {
+            super.getPackageManager().getPackageArchiveInfo(it.apkFile.absolutePath, 0)?.applicationInfo
+        } ?: super.getApplicationInfo()
+        if (app != null) {
+            info.packageName = app.packageName
+            info.sourceDir = app.apkFile.absolutePath
+            info.publicSourceDir = app.apkFile.absolutePath
+            info.dataDir = root.absolutePath
+            info.nativeLibraryDir = app.nativeLibDir.absolutePath
+        }
+        info
+    }
+    override fun getApplicationInfo(): ApplicationInfo = appInfo
+    override fun getPackageCodePath(): String = runtime?.app?.apkFile?.absolutePath ?: super.getPackageCodePath()
+    override fun getPackageResourcePath(): String = runtime?.app?.apkFile?.absolutePath ?: super.getPackageResourcePath()
 
     private fun dir(name: String) = File(root, name).apply { mkdirs() }
     private val databasesDir get() = dir("databases")

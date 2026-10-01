@@ -10,6 +10,9 @@ data class VirtualApp(
 ) {
     /** 某个 Activity 的主题：先取它自己的，没有则取 application 的，都没有为 0 */
     fun themeFor(activityClass: String): Int = themes[activityClass]?.takeIf { it != 0 } ?: appTheme
+
+    /** 解压 native 库的目录；没有 so 时目录为空（但始终存在，便于拼 librarySearchPath） */
+    val nativeLibDir: File get() = File(apkFile.parentFile, "lib")
 }
 
 /** 管理虚拟应用的安装与实例目录。每个实例有独立的 base.apk 与数据目录，从而实现"多开"。 */
@@ -24,6 +27,7 @@ object VirtualCore {
         ctx.contentResolver.openInputStream(uri)!!.use { i -> apk.outputStream().use { i.copyTo(it) } }
         apk.setReadOnly() // Android 14+ 要求动态加载的 dex 文件只读
         File(dir, "data").mkdirs()
+        try { NativeLibs.extract(apk, File(dir, "lib")) } catch (e: Exception) { android.util.Log.w("MultiOpen", "extract native libs failed", e) }
         val m = try { ManifestParser.parse(apk) } catch (e: Exception) { dir.deleteRecursively(); throw e }
         val launcher = m.launcher ?: m.activities.firstOrNull()
         if (launcher == null) { dir.deleteRecursively(); error("APK 中没有找到任何 Activity") }
