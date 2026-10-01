@@ -52,14 +52,16 @@ class MainActivity : Activity() {
 
     /** 入口类是 PluginActivity → 走 ProxyActivity；否则按普通 APK 走桩 Activity + Instrumentation 替换 */
     private fun launch(app: VirtualApp) {
+        val rt = VirtualRuntimes.get(this, app, false)
         val isPlugin = try {
-            PluginActivity::class.java.isAssignableFrom(VirtualRuntimes.get(this, app, false).classLoader.loadClass(app.mainClass))
+            PluginActivity::class.java.isAssignableFrom(rt.classLoader.loadClass(app.mainClass))
         } catch (t: Throwable) { false }
         if (isPlugin) {
             startActivity(Intent(this, ProxyActivity::class.java).putExtra(ProxyActivity.EXTRA_INSTANCE, app.instanceId))
         } else {
+            val launchMode = try { rt.manifest.activityLaunchModes[app.mainClass] ?: 0 } catch (t: Throwable) { 0 }
             startActivity(Intent()
-                .setComponent(ComponentName(this, StubActivity.nextStub()))
+                .setComponent(ComponentName(this, StubActivity.nextStub(launchMode)))
                 .putExtra(StubActivity.EXTRA_INSTANCE, app.instanceId)
                 .putExtra(StubActivity.EXTRA_CLASS, app.mainClass))
         }

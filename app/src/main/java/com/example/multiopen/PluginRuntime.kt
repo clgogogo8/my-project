@@ -12,6 +12,9 @@ class PluginRuntime(host: Context, val app: VirtualApp, isolated: Boolean = fals
     val classLoader: ClassLoader
     val resources: Resources
 
+    /** 按需解析并缓存该实例的 manifest（桩池按 launchMode 分配等会用到） */
+    val manifest: ApkManifest by lazy { ManifestParser.parse(app.apkFile) }
+
     init {
         val optDir = File(app.apkFile.parentFile, "oat").apply { mkdirs() }
         // isolated=false：parent 用宿主 ClassLoader，plugin-api 的类共享（PluginActivity 模式）

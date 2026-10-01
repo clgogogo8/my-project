@@ -19,14 +19,14 @@ gradle wrapper
 3. [~] 运行**未修改**的普通 APK
    - [x] 3a：解除隐藏 API 限制 + 桩 Activity + Instrumentation 替换（`HookInstrumentation`），启动普通 APK 的入口 Activity，替换 Resources/Theme（待真机验证）
    - [x] 3b-1：插件内 Activity 间跳转（`ExecHookInstrumentation` + `rewriteIntent`）、插件自己的 `Application`（`VirtualApplications`）、按 Activity 取主题（待真机验证，测试用 `test-multi`）
-   - [~] 3b-2：Service / Broadcast / ContentProvider（进程内实现，见下方“适配微信”）；桩池（launchMode / 方向 / 透明主题）待办
+   - [~] 3b-2：Service / Broadcast / ContentProvider（进程内实现，见下方“适配微信”）；桩池已支持 standard/singleTop/singleTask/singleInstance，方向/透明主题待办
    - [x] 数据隔离：`VirtualContext` 重定向 files/cache/databases/SharedPreferences 到实例目录（待真机验证）
    - [~] 3c：伪装与路径
      - [x] native so：按设备 ABI 从 APK 解出 `lib/<abi>/*.so`（`NativeLibs`），作为 `DexClassLoader` 的 librarySearchPath
      - [x] `getApplicationInfo()` 伪装：包名 / dataDir / nativeLibraryDir / sourceDir 指向本实例（`VirtualContext`）
      - [x] `getPackageName()` 伪装 + `IActivityManager` 代理 hook（`ActivityManagerHook`）：应用读插件包名，binder 层把误入 AMS 的虚拟包名归一回宿主包名
      - [x] `PackageManager` 代理 hook（`PackageManagerHook`）：拦截对虚拟包的 getPackageInfo / getApplicationInfo（按包名）与 getActivityInfo / getServiceInfo / getProviderInfo / getReceiverInfo（按 ComponentName），用 `VirtualAppInfo` 现解 APK 构造结果
-     - [ ] 外部存储重定向
+     - [x] 外部存储重定向（app 私有外部目录 → 实例目录，`VirtualContext`；公共路径待 native）
 4. [~] Service / Broadcast / ContentProvider（进程内，已可回调生命周期）；系统级保活与通知待办
 5. [ ] Native 层路径重定向与设备信息伪装
 6. [ ] 兼容性适配（隐藏 API 限制、64/32 位 so）
@@ -50,4 +50,11 @@ gradle wrapper
 - [x] 桩池（`StubActivity` + `StubActivity1..7` 轮换）：破 SINGLE_TOP 单桩启动循环 → **WelcomeActivity 创建、微信欢迎页显示出来**
 - [ ] 启动期 ANR：冷启动主线程忙 ~8s（`Displayed +7s917ms`）触发系统“无响应”，点“等待”可继续；待确认是否仅首次冷启动（dex2oat 未缓存）
 - [ ] 登录：连腾讯服务器做设备注册 / 安全校验，非官方容器 + 伪造环境下很可能被风控拦（能否通过不在可控范围）
-- [ ] 桩池进阶：launchMode=singleTask/singleInstance 的目标需对应 launchMode 的桩；竖屏锁定 / 透明主题
+- [x] 桩池按 launchMode 分配：standard/singleTop 通用池 + singleTask/singleInstance 专用桩（manifest 声明）
+- [x] app 私有外部存储隔离（`getExternalFilesDir` 等 → 实例目录）
+- [ ] 竖屏锁定 / 透明主题的桩（深层页面可能需要）
+
+### 还需真机专项（都要动 hidden 类型或 native，不能盲写，需单独一轮真机调）
+- [ ] content:// 跨组件解析：在 `ActivityManagerHook` 里拦 `getContentProvider`，用动态代理包 `IContentProvider`、反射构造 `ContentProviderHolder` 返回本地 provider（FileProvider 分享）
+- [ ] 系统级保活 / startForeground / 推送：manifest 声明桩 Service，把 startService/startForeground 经 AMS 走系统（当前是进程内模拟，系统不感知）
+- [ ] native 层路径重定向 + 设备信息伪装：需 PLT/inline hook（如 xhook）改 /proc、Environment 公共路径、设备标识；与登录风控强相关，且不保证能过

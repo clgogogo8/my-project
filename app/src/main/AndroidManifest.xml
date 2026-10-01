@@ -37,5 +37,12 @@
         <activity android:name=".StubActivity5" android:exported="false" />
         <activity android:name=".StubActivity6" android:exported="false" />
         <activity android:name=".StubActivity7" android:exported="false" />
+        <!-- singleTask / singleInstance 专用桩，launchMode 必须与 StubActivity.kt 的分组一致 -->
+        <activity android:name=".StubTask0" android:exported="false" android:launchMode="singleTask" />
+        <activity android:name=".StubTask1" android:exported="false" android:launchMode="singleTask" />
+        <activity android:name=".StubTask2" android:exported="false" android:launchMode="singleTask" />
+        <activity android:name=".StubTask3" android:exported="false" android:launchMode="singleTask" />
+        <activity android:name=".StubInstance0" android:exported="false" android:launchMode="singleInstance" />
+        <activity android:name=".StubInstance1" android:exported="false" android:launchMode="singleInstance" />
     </application>
 </manifest>

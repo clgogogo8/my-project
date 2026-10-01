@@ -63,8 +63,9 @@ open class HookInstrumentation(protected val ctx: Context, protected val base: I
             val isPluginActivity = try { Activity::class.java.isAssignableFrom(rt.classLoader.loadClass(cls)) } catch (_: Throwable) { false }
             if (!isPluginActivity) return intent
             Log.i(TAG, "rewriteIntent: $cls -> stub (flags=0x${Integer.toHexString(intent.flags)})")
+            val launchMode = rt.manifest.activityLaunchModes[cls] ?: 0
             Intent(intent)
-                .setComponent(ComponentName(ctx.packageName, StubActivity.nextStub())) // 轮换桩，避免 SINGLE_TOP 复用栈顶
+                .setComponent(ComponentName(ctx.packageName, StubActivity.nextStub(launchMode))) // 按 launchMode 轮换桩
                 .putExtra(StubActivity.EXTRA_INSTANCE, instance)
                 .putExtra(StubActivity.EXTRA_CLASS, cls)
         } catch (t: Throwable) {
