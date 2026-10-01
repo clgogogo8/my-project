@@ -64,8 +64,11 @@ open class HookInstrumentation(protected val ctx: Context, protected val base: I
             if (!isPluginActivity) return intent
             Log.i(TAG, "rewriteIntent: $cls -> stub (flags=0x${Integer.toHexString(intent.flags)})")
             val launchMode = rt.manifest.activityLaunchModes[cls] ?: 0
+            // 透明/悬浮主题的目标用透明桩（窗口透明要由桩的 manifest 主题在 attach 时决定），否则按 launchMode
+            val stubName = if (isTranslucentTheme(rt, rt.app.themeFor(cls))) StubActivity.nextTranslucentStub()
+                           else StubActivity.nextStub(launchMode)
             Intent(intent)
-                .setComponent(ComponentName(ctx.packageName, StubActivity.nextStub(launchMode))) // 按 launchMode 轮换桩
+                .setComponent(ComponentName(ctx.packageName, stubName))
                 .putExtra(StubActivity.EXTRA_INSTANCE, instance)
                 .putExtra(StubActivity.EXTRA_CLASS, cls)
         } catch (t: Throwable) {
@@ -99,6 +102,18 @@ open class HookInstrumentation(protected val ctx: Context, protected val base: I
             Log.e(TAG, "patch failed", t)
         }
     }
+
+    /** 用插件资源解析主题的 windowIsTranslucent / windowIsFloating，判断该 Activity 是否透明 */
+    private fun isTranslucentTheme(rt: PluginRuntime, themeId: Int): Boolean = try {
+        if (themeId == 0) false else {
+            val theme = rt.resources.newTheme().apply { applyStyle(themeId, true) }
+            val a = theme.obtainStyledAttributes(
+                intArrayOf(android.R.attr.windowIsTranslucent, android.R.attr.windowIsFloating))
+            val r = a.getBoolean(0, false) || a.getBoolean(1, false)
+            a.recycle()
+            r
+        }
+    } catch (t: Throwable) { false }
 
     private fun setField(clazz: Class<*>, obj: Any, name: String, value: Any?) {
         var c: Class<*>? = clazz

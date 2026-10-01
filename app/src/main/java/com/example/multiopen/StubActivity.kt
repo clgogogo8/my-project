@@ -20,16 +20,21 @@ open class StubActivity : Activity() {
             add(StubActivity::class.java.name)
             for (i in 1..7) add("com.example.multiopen.StubActivity$i")
         }
-        // 专用池：类名与 AndroidManifest 里声明的 launchMode 一致
+        // 专用池：类名与 AndroidManifest 里声明的 launchMode / 主题一致
         private val singleTask: List<String> = (0..3).map { "com.example.multiopen.StubTask$it" }
         private val singleInstance: List<String> = (0..1).map { "com.example.multiopen.StubInstance$it" }
+        private val translucent: List<String> = (0..1).map { "com.example.multiopen.StubTranslucent$it" }
 
         /** newActivity 用来识别“这是一个桩”的全部类名 */
-        val classNames: List<String> = standard + singleTask + singleInstance
+        val classNames: List<String> = standard + singleTask + singleInstance + translucent
 
         private val stdCursor = AtomicInteger(0)
         private val taskCursor = AtomicInteger(0)
         private val instCursor = AtomicInteger(0)
+        private val transCursor = AtomicInteger(0)
+
+        /** 透明主题的桩（manifest 声明 Theme.Translucent），给透明/悬浮的插件 Activity 用 */
+        fun nextTranslucentStub(): String = translucent[Math.floorMod(transCursor.getAndIncrement(), translucent.size)]
 
         /** 按目标 launchMode 取下一个桩（0/1 通用池，2 singleTask，3 singleInstance） */
         fun nextStub(launchMode: Int): String = when (launchMode) {
@@ -61,3 +66,7 @@ class StubTask3 : StubActivity()
 // singleInstance 专用桩
 class StubInstance0 : StubActivity()
 class StubInstance1 : StubActivity()
+
+// 透明主题专用桩（主题在 AndroidManifest 里声明）
+class StubTranslucent0 : StubActivity()
+class StubTranslucent1 : StubActivity()

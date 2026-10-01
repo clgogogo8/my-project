@@ -47,5 +47,8 @@
         <activity android:name=".StubTask3" android:exported="false" android:launchMode="singleTask" />
         <activity android:name=".StubInstance0" android:exported="false" android:launchMode="singleInstance" />
         <activity android:name=".StubInstance1" android:exported="false" android:launchMode="singleInstance" />
+        <!-- 透明主题桩：给透明/悬浮的插件 Activity 用（窗口透明由 manifest 主题在 attach 时决定） -->
+        <activity android:name=".StubTranslucent0" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity android:name=".StubTranslucent1" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
     </application>
 </manifest>
