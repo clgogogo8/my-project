@@ -5,43 +5,43 @@
 
 ---
 
-## 目标 commit：见最新（当前分支已含四大组件 + 各 hook + 桩池 + 透明/方向 + 前台保活，全部冒烟过）
+## 这轮是「登录卡死诊断轮」——不改代码，只抓现场
 
-## 这轮是「登录轮」——登录由**用户本人**操作
+用户本人手动登录时，点"登录"**一直转圈**（没有错误提示，就是无限 loading）。
+转圈而不报错 = 登录请求发出后在等一个永不返回的响应，最可能是微信 UI 进程经 IPCInvoker 把登录请求
+发给 `:push` 网络进程、等它 IPC 回传，而我们单进程模拟里这一跳没接通。**要坐实，必须抓转圈那刻的线程栈。**
 
-登录前能写、能冒烟的都做完了。接下来所有剩余项（保活实际效果、content:// 分享、通知内容、
-设备/native）都只有**登录之后**才能看出真问题。所以这轮把 App 跑到登录页，**由用户本人完成登录**，
-本地 AI 只负责开日志、把登录过程和登录后的真实表现抓回来。
-
-### ⚠ 红线（本地 AI 必须遵守）
-- **本地 AI 不要输入用户的微信账号/密码，不要点"同意并登录"，不要碰验证码/短信。**
-  登录的每一步输入都由**用户本人**在手机上亲自操作。
-- 你（本地 AI）只做：编译、装宿主、清数据、打开微信到登录页、**开着 logcat 等用户登录**、登录后抓日志。
+### 红线不变
+- 账号/密码仍由**用户本人**输入，本地 AI 不代输、不点登录。本地 AI 只负责抓日志和线程栈。
 
 ## 步骤
-1. 编译 `:app`，装宿主，`pm clear com.example.multiopen` 清数据。
-2. 打开微信到登录页（账号密码页或手机号页，用户想用哪种都行）。
-3. 全程开日志（登录很多模块，放宽一点）：
-   `adb logcat MultiOpen:I AndroidRuntime:E ActivityTaskManager:I DEBUG:E System.err:W *:S > /sdcard/login.log &`
-   （或你惯用的全量抓法；崩了要能看到 native tombstone/DEBUG 段。）
-4. **提示用户本人在手机上登录**（输账号密码、过验证码/短信/设备确认等）。本地 AI 不代输。
-5. 登录完成（成功或失败都可以），停日志，整理。
+1. 编译 `:app`、装宿主、`pm clear com.example.multiopen` 清数据。
+2. `adb logcat -c` 清旧日志，然后开始全量抓：
+   `adb logcat -v threadtime > /sdcard/login_full.log &`
+   （**不要过滤**，我要看 MicroMsg / Mars / STN / IPCInvoker / Cronet / AndroidRuntime / DEBUG 全部。）
+3. 打开微信到登录页，**提示用户本人输账号密码并点登录**。
+4. **在转圈期间**（点了登录、还在转、大约等 10~20 秒后），抓 `com.example.multiopen` 的 Java 线程栈：
+   - 先拿 pid：`adb shell pidof com.example.multiopen`
+   - 触发 dump：`adb shell kill -3 <pid>`（SIGQUIT，让 ART 写 ANR trace）
+   - 取 trace：`adb shell "cat /data/anr/traces.txt"`（若无权限，试 `adb root` 后再 cat；小米可能要在开发者选项里开 root 调试）
+   - 取不到 traces.txt 就退而求其次：`adb shell debuggerd -j <pid>`（能打 Java 栈）或 `debuggerd -b <pid>`（native 栈），把输出贴回来。
+5. 停日志。
 
-## 登录后重点看（有什么抓什么，照实写，不确定就标"推测"）
-1. **登录结果**：成功进主界面？还是卡住/报错/被风控拦（"操作频繁""环境异常""需要验证"之类）？原样记微信的提示文案。
-2. **崩溃**：登录过程或登录后有没有 FATAL / native tombstone？在哪一步、什么异常、哪个 .so/类。
-3. **主界面**：能否进聊天列表？列表、会话、设置这些页面能不能开、稳不稳。
-4. **前台保活**（这轮第一次可能真触发）：有没有 `startForeground intercepted for virtual service <类名>`？
-   通知栏有没有宿主的"正在后台运行"通知？把相关行贴回来。
-5. **content:// / 发图发文件**：如果能进会话，试发一张图/一个文件，看 FileProvider/content:// 有没有报错。
-6. **设备相关报错**：有没有和设备标识/路径相关的异常（IMEI/Android ID//proc/序列号/安装来源等）。
-
-## 异常计数照旧 + 这几条：
-- 登录是否成功（是/否/被拦，附微信提示原文）
-- FATAL / native tombstone：几次、在哪步
-- `startForeground intercepted`：几次、哪个 Service
+## 回传时请给我这几样（照实贴，太长就截相关段）
+1. **线程栈里的关键线程**：找名字含 `main` 以及含 `IPCInvoker` / `MM` / `push` / `Mars` / `STN` / `HandlerThread`
+   的线程，把它们的栈贴回来——我要看**哪个线程卡在哪个方法**（例如卡在 `CountDownLatch.await` / `Binder.transactNative`
+   / `Object.wait` / `LinkedBlockingQueue.take` / 某个 `*.ipcInvoke` / `*.invoke`）。这是本轮最重要的东西。
+2. **登录那一刻起的关键 logcat**（从 login_full.log 里 grep，各贴几十行）：
+   - `MicroMsg`（微信自己的日志 tag，登录/network/autoauth/accountmgr 相关）
+   - `Mars` / `mars` / `STN` / `stn` / `longlink` / `shortlink`（微信网络库）
+   - `IPCInvoker` / `ipc`
+   - `Cronet` / `cronet`
+   - `MultiOpen`（我们的）：有没有 `bindService` / `virtual Service created` 在登录时触发？是哪个 Service？
+   - 任何 `AndroidRuntime` / `DEBUG` / `tombstone` / `FATAL`
+3. **现象确认**：是否真·一直转圈（>60 秒不返回）？期间有没有弹过任何提示？进程有没有死（pid 有没有变）？
+4. **登录时新建了哪些 virtual Service / 绑定**：把登录期间 `MultiOpen` 里 `virtual Service created` / `bindService` 的行都贴回来。
 
 ## 写回 debug/last-run.md（覆盖），然后
 ```
-git add debug/last-run.md && git commit -m "test run: 登录轮（用户本人登录）" && git push
+git add debug/last-run.md && git commit -m "test run: 登录卡死诊断（线程栈+日志）" && git push
 ```
