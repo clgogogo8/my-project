@@ -11,6 +11,6 @@ object Hooks {
         val field = atClass.getDeclaredField("mInstrumentation").apply { isAccessible = true }
         val base = field.get(thread) as Instrumentation
         if (base is HookInstrumentation) return
-        field.set(thread, HookInstrumentation(app, base))
+        field.set(thread, ExecHookInstrumentation(app, base))
     }
 }

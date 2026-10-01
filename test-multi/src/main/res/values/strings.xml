@@ -1,0 +1,4 @@
+<resources>
+    <string name="second_title">第二个页面（AppCompat）</string>
+    <string name="reply">回复并返回</string>
+</resources>

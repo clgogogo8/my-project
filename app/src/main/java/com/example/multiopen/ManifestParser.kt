@@ -11,6 +11,7 @@ data class ApkManifest(
     /** 带 MAIN + LAUNCHER intent-filter 的 Activity，找不到则为 null */
     val launcher: String?,
     /** application 级 android:theme 的资源 ID（插件资源表里的 ID），无则 0 */
+    val applicationClass: String?,
     val appTheme: Int,
     val activityThemes: Map<String, Int>,
 )
@@ -30,6 +31,7 @@ object ManifestParser {
         val activities = mutableListOf<String>()
         var launcher: String? = null
         var appTheme = 0
+        var appClass: String? = null
         val themes = mutableMapOf<String, Int>()
 
         am.openXmlResourceParser(cookie, "AndroidManifest.xml").use { p ->
@@ -44,6 +46,7 @@ object ManifestParser {
                         "application" -> {
                             label = p.getAttributeValue(ANDROID_NS, "label")
                             appTheme = p.getAttributeResourceValue(ANDROID_NS, "theme", 0)
+                            appClass = p.getAttributeValue(ANDROID_NS, "name")?.let { full(pkg, it) }
                         }
                         "activity", "activity-alias" -> {
                             curActivity = full(pkg, p.getAttributeValue(ANDROID_NS, "name"))
@@ -62,7 +65,7 @@ object ManifestParser {
                 ev = p.next()
             }
         }
-        return ApkManifest(pkg, label, activities, launcher, appTheme, themes)
+        return ApkManifest(pkg, label, activities, launcher, appClass, appTheme, themes)
     }
 
     private fun full(pkg: String, name: String?): String = when {

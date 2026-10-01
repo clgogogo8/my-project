@@ -4,7 +4,13 @@ import android.content.Context
 import android.net.Uri
 import java.io.File
 
-data class VirtualApp(val instanceId: String, val apkFile: File, val label: String, val packageName: String, val mainClass: String, val themeRes: Int = 0)
+data class VirtualApp(
+    val instanceId: String, val apkFile: File, val label: String, val packageName: String, val mainClass: String,
+    val applicationClass: String?, val appTheme: Int, val themes: Map<String, Int>,
+) {
+    /** 某个 Activity 的主题：先取它自己的，没有则取 application 的，都没有为 0 */
+    fun themeFor(activityClass: String): Int = themes[activityClass]?.takeIf { it != 0 } ?: appTheme
+}
 
 /** 管理虚拟应用的安装与实例目录。每个实例有独立的 base.apk 与数据目录，从而实现"多开"。 */
 object VirtualCore {
@@ -23,7 +29,11 @@ object VirtualCore {
         if (launcher == null) { dir.deleteRecursively(); error("APK 中没有找到任何 Activity") }
         File(dir, "main_class").writeText(launcher)
         File(dir, "package").writeText(m.packageName)
-        File(dir, "theme").writeText((m.activityThemes[launcher]?.takeIf { it != 0 } ?: m.appTheme).toString())
+        File(dir, "application").writeText(m.applicationClass.orEmpty())
+        File(dir, "themes").writeText(buildString {
+            appendLine("@app=${m.appTheme}")
+            m.activityThemes.forEach { (k, v) -> appendLine("$k=$v") }
+        })
         return load(apk)
     }
 
@@ -35,7 +45,10 @@ object VirtualCore {
     private fun load(apk: File): VirtualApp {
         val dir = apk.parentFile!!
         val pkg = File(dir, "package").readText()
+        val themes = File(dir, "themes").takeIf { it.exists() }?.readLines().orEmpty()
+            .mapNotNull { l -> l.split("=", limit = 2).takeIf { it.size == 2 }?.let { it[0] to (it[1].toIntOrNull() ?: 0) } }.toMap()
         return VirtualApp(dir.name, apk, "$pkg #${dir.name.takeLast(5)}", pkg, File(dir, "main_class").readText(),
-            File(dir, "theme").takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0)
+            File(dir, "application").takeIf { it.exists() }?.readText()?.trim()?.ifEmpty { null },
+            themes["@app"] ?: 0, themes.filterKeys { it != "@app" })
     }
 }

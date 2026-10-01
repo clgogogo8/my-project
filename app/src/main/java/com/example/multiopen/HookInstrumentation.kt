@@ -1,19 +1,23 @@
 package com.example.multiopen
 
 import android.app.Activity
+import android.app.Application
 import android.app.Instrumentation
+import android.content.ComponentName
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Bundle
 import android.os.PersistableBundle
 import android.util.Log
+import android.view.ContextThemeWrapper
 
 /**
  * 启动流程：宿主 startActivity(StubActivity + extras) → 系统创建 Stub →
- * newActivity() 里返回插件的真实 Activity 实例 → callActivityOnCreate() 里把它的 Resources/Theme 换成插件的。
- * 只用到 Instrumentation 的公开方法加少量字段反射，比 Hook AMS 稳，对 Android 9–14 通用。
+ * newActivity() 里返回插件的真实 Activity 实例 → callActivityOnCreate() 里换 Resources/Theme/Context。
+ * 插件内部的 startActivity 由子类 ExecHookInstrumentation（Java）转到 [rewriteIntent]。
  */
-class HookInstrumentation(private val ctx: Context, private val base: Instrumentation) : Instrumentation() {
+open class HookInstrumentation(protected val ctx: Context, protected val base: Instrumentation) : Instrumentation() {
 
     init {
         // 把原 Instrumentation 的内部状态（mThread、mAppContext 等）复制过来
@@ -28,6 +32,7 @@ class HookInstrumentation(private val ctx: Context, private val base: Instrument
         val real = intent?.getStringExtra(StubActivity.EXTRA_CLASS)
         if (className == StubActivity::class.java.name && instance != null && real != null) {
             val rt = VirtualRuntimes.get(ctx, instance, isolated = true)
+            VirtualApplications.ensure(ctx, rt) // 插件的 Application 必须先于它的第一个 Activity 存在
             Log.i(TAG, "newActivity: stub -> $real")
             return rt.classLoader.loadClass(real).getDeclaredConstructor().newInstance() as Activity
         }
@@ -44,7 +49,31 @@ class HookInstrumentation(private val ctx: Context, private val base: Instrument
         base.callActivityOnCreate(activity, icicle, persistentState)
     }
 
-    /** 把插件 Activity 的 Resources 与 Theme 换成插件自己的 */
+    /**
+     * 插件内部启动另一个 Activity：如果 Intent 的显式组件是这个插件自己的 Activity，
+     * 就改成启动桩（并带上实例与真实类名）。其它 Intent 原样放行。
+     */
+    open fun rewriteIntent(who: Context?, intent: Intent?): Intent? {
+        val comp = intent?.component ?: return intent
+        val instance = (who as? Activity)?.intent?.getStringExtra(StubActivity.EXTRA_INSTANCE) ?: return intent
+        return try {
+            val rt = VirtualRuntimes.get(ctx, instance, isolated = true)
+            if (comp.packageName != ctx.packageName && comp.packageName != rt.app.packageName) return intent
+            val cls = if (comp.className.startsWith(".")) rt.app.packageName + comp.className else comp.className
+            val isPluginActivity = try { Activity::class.java.isAssignableFrom(rt.classLoader.loadClass(cls)) } catch (_: Throwable) { false }
+            if (!isPluginActivity) return intent
+            Log.i(TAG, "rewriteIntent: $cls -> stub")
+            Intent(intent)
+                .setComponent(ComponentName(ctx.packageName, StubActivity::class.java.name))
+                .putExtra(StubActivity.EXTRA_INSTANCE, instance)
+                .putExtra(StubActivity.EXTRA_CLASS, cls)
+        } catch (t: Throwable) {
+            Log.e(TAG, "rewriteIntent failed", t)
+            intent
+        }
+    }
+
+    /** 把插件 Activity 的 Resources / Theme / Context / Application 换成插件自己的 */
     private fun patch(activity: Activity) {
         val instance = activity.intent?.getStringExtra(StubActivity.EXTRA_INSTANCE) ?: return
         if (activity is StubActivity) return
@@ -53,14 +82,15 @@ class HookInstrumentation(private val ctx: Context, private val base: Instrument
             val baseCtx = activity.baseContext
             setField(baseCtx.javaClass, baseCtx, "mResources", rt.resources)
             setField(baseCtx.javaClass, baseCtx, "mTheme", null)
-            val wrapper = android.view.ContextThemeWrapper::class.java
-            setField(wrapper, activity, "mResources", null)
-            setField(wrapper, activity, "mTheme", null)
-            setField(wrapper, activity, "mThemeResource", 0)
-            activity.setTheme(rt.app.themeRes.takeIf { it != 0 } ?: android.R.style.Theme_Material_Light_DarkActionBar)
-            // 最后一步：把 Activity 的 baseContext 包一层，重定向数据目录（ContextWrapper.mBase 不是 final）
-            setField(android.content.ContextWrapper::class.java, activity, "mBase",
-                VirtualContext(baseCtx, instance, VirtualCore.dataDir(rt.app)))
+            setField(ContextThemeWrapper::class.java, activity, "mResources", null)
+            setField(ContextThemeWrapper::class.java, activity, "mTheme", null)
+            setField(ContextThemeWrapper::class.java, activity, "mThemeResource", 0)
+            activity.setTheme(rt.app.themeFor(activity.javaClass.name).takeIf { it != 0 } ?: android.R.style.Theme_Material_Light_DarkActionBar)
+            // Activity.getApplication() 返回插件自己的 Application
+            VirtualApplications.get(instance)?.let { setField(Activity::class.java, activity, "mApplication", it) }
+            // 最后一步：包一层 Context，重定向数据目录、ClassLoader、applicationContext
+            setField(ContextWrapper::class.java, activity, "mBase",
+                VirtualContext(baseCtx, instance, VirtualCore.dataDir(rt.app), rt) { VirtualApplications.get(instance) })
         } catch (t: Throwable) {
             Log.e(TAG, "patch failed", t)
         }
