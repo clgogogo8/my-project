@@ -5,7 +5,10 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.res.AssetManager
 import android.content.res.Resources
+import android.content.ComponentName
 import android.content.ContextWrapper
+import android.content.Intent
+import android.content.ServiceConnection
 import android.content.SharedPreferences
 import android.database.DatabaseErrorHandler
 import android.database.sqlite.SQLiteDatabase
@@ -32,6 +35,17 @@ class VirtualContext(
     override fun getClassLoader(): ClassLoader = runtime?.classLoader ?: super.getClassLoader()
     override fun getApplicationContext(): Context = appProvider() ?: super.getApplicationContext()
     override fun getPackageName(): String = runtime?.app?.packageName ?: super.getPackageName()
+
+    // Service：指向插件自己的 Service 走进程内管理器，其它（系统服务等）原样交给 super
+    override fun startService(service: Intent): ComponentName? =
+        VirtualServices.start(baseContext, instanceId, runtime, service) ?: super.startService(service)
+    override fun stopService(name: Intent): Boolean =
+        VirtualServices.stop(instanceId, name, runtime) ?: super.stopService(name)
+    override fun bindService(service: Intent, conn: ServiceConnection, flags: Int): Boolean =
+        VirtualServices.bind(baseContext, instanceId, runtime, service, conn) ?: super.bindService(service, conn, flags)
+    override fun unbindService(conn: ServiceConnection) {
+        if (!VirtualServices.unbind(conn)) super.unbindService(conn)
+    }
 
     /** 用插件 APK 自身的 ApplicationInfo，并把 so/数据/APK 路径改到本实例目录 */
     private val appInfo: ApplicationInfo by lazy {
