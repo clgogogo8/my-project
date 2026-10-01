@@ -58,6 +58,6 @@ gradle wrapper
 
 ### 还需真机专项（都要动 hidden 类型或 native，不能盲写，需单独一轮真机调）
 - [~] content:// 跨组件解析：`ActivityManagerHook` 拦 `getContentProvider`/`getContentProviderExternal`，对已登记虚拟 authority 返回本地 provider 的 `IContentProvider`（`ContentProviderHolder`，进程内）。代码就位、回归通过；实际 FileProvider 分享效果需登录后聊天场景验证
-- [~] 系统级保活 / startForeground / 推送：宿主声明真前台 Service（`KeepAliveService`），虚拟 Service 的 `startForeground` 经 ART hook 转交它真正把进程拉到前台（系统感知）。进程内 Service 模拟仍在；推送拉起（被系统/AMS 唤起冷启动）需登录后验证
+- [~] 系统级保活 / startForeground / 推送：宿主声明真前台 Service（`KeepAliveService`），虚拟 Service 的 `startForeground` 经 ART hook 转交它真正把进程拉到前台（系统感知）。**真机冒烟已过**：编译成功、hook 装上（`ART hook installed: ...routing` 1 次、无失败/跳过）、启动不崩、回归绿；但登录前没有虚拟 Service 真的进前台，所以转交路径本身的实际效果仍需登录后验证。进程内 Service 模拟仍在
 - [ ] 渲染插件自己的通知内容：当前 `KeepAliveService` 只显示宿主通用通知，不渲染插件的 icon/标题（插件资源表宿主 NotificationManager 解析不了）
 - [ ] native 层路径重定向 + 设备信息伪装：需 PLT/inline hook（如 xhook）改 /proc、Environment 公共路径、设备标识；与登录风控强相关，且不保证能过
