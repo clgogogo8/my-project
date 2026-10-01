@@ -28,6 +28,14 @@
         </activity>
         <!-- 桩 Activity：每个虚拟进程/实例对应一个，后续扩展为多个 -->
         <activity android:name=".ProxyActivity" android:exported="false" />
+        <!-- 桩 Activity 池：多个桩类轮换，避免 SINGLE_TOP 把目标投递到栈顶同一个桩而不新建 -->
         <activity android:name=".StubActivity" android:exported="false" />
+        <activity android:name=".StubActivity1" android:exported="false" />
+        <activity android:name=".StubActivity2" android:exported="false" />
+        <activity android:name=".StubActivity3" android:exported="false" />
+        <activity android:name=".StubActivity4" android:exported="false" />
+        <activity android:name=".StubActivity5" android:exported="false" />
+        <activity android:name=".StubActivity6" android:exported="false" />
+        <activity android:name=".StubActivity7" android:exported="false" />
     </application>
 </manifest>

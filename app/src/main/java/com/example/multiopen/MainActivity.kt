@@ -1,6 +1,7 @@
 package com.example.multiopen
 
 import android.app.Activity
+import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import android.view.ViewGroup
@@ -57,7 +58,8 @@ class MainActivity : Activity() {
         if (isPlugin) {
             startActivity(Intent(this, ProxyActivity::class.java).putExtra(ProxyActivity.EXTRA_INSTANCE, app.instanceId))
         } else {
-            startActivity(Intent(this, StubActivity::class.java)
+            startActivity(Intent()
+                .setComponent(ComponentName(this, StubActivity.nextStub()))
                 .putExtra(StubActivity.EXTRA_INSTANCE, app.instanceId)
                 .putExtra(StubActivity.EXTRA_CLASS, app.mainClass))
         }

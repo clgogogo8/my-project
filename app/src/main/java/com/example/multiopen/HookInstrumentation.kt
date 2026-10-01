@@ -30,7 +30,7 @@ open class HookInstrumentation(protected val ctx: Context, protected val base: I
     override fun newActivity(cl: ClassLoader?, className: String?, intent: Intent?): Activity {
         val instance = intent?.getStringExtra(StubActivity.EXTRA_INSTANCE)
         val real = intent?.getStringExtra(StubActivity.EXTRA_CLASS)
-        if (className == StubActivity::class.java.name && instance != null && real != null) {
+        if (className != null && className in StubActivity.classNames && instance != null && real != null) {
             val rt = VirtualRuntimes.get(ctx, instance, isolated = true)
             VirtualApplications.ensure(ctx, rt) // 插件的 Application 必须先于它的第一个 Activity 存在
             Log.i(TAG, "newActivity: stub -> $real")
@@ -64,7 +64,7 @@ open class HookInstrumentation(protected val ctx: Context, protected val base: I
             if (!isPluginActivity) return intent
             Log.i(TAG, "rewriteIntent: $cls -> stub (flags=0x${Integer.toHexString(intent.flags)})")
             Intent(intent)
-                .setComponent(ComponentName(ctx.packageName, StubActivity::class.java.name))
+                .setComponent(ComponentName(ctx.packageName, StubActivity.nextStub())) // 轮换桩，避免 SINGLE_TOP 复用栈顶
                 .putExtra(StubActivity.EXTRA_INSTANCE, instance)
                 .putExtra(StubActivity.EXTRA_CLASS, cls)
         } catch (t: Throwable) {
