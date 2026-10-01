@@ -29,6 +29,10 @@ object VirtualApplications {
                 apps.remove(rt.app.instanceId) // attachBaseContext 失败则回滚占位
                 throw t
             }
+            // 让 ActivityThread.currentApplication() 返回这个虚拟 Application：微信的 report.service /
+            // platformtools 等进程级基础设施（常在后台线程）通过它拿全局 Context/Resources，否则拿到宿主
+            // Application，其 Resources 不含微信 apk → le5.j 查资源 NotFound。必须在 onCreate 前设好。
+            setInitialApplication(app)
             try { app.onCreate() } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "plugin Application.onCreate failed", t) }
             Log.i(MultiOpenApp.TAG, "virtual Application created: ${app.javaClass.name}")
             // Application 就绪后，把该实例的静态广播与 ContentProvider 装上（各自只装一次）
@@ -38,6 +42,21 @@ object VirtualApplications {
         } catch (t: Throwable) {
             Log.e(MultiOpenApp.TAG, "create virtual Application failed", t)
             null
+        }
+    }
+
+    /** 把虚拟 Application 设为 ActivityThread.mInitialApplication 并加入 mAllApplications */
+    private fun setInitialApplication(app: Application) {
+        try {
+            val atClass = Class.forName("android.app.ActivityThread")
+            val at = atClass.getDeclaredMethod("currentActivityThread").apply { isAccessible = true }.invoke(null)
+            atClass.getDeclaredField("mInitialApplication").apply { isAccessible = true }.set(at, app)
+            @Suppress("UNCHECKED_CAST")
+            val all = atClass.getDeclaredField("mAllApplications").apply { isAccessible = true }.get(at) as? ArrayList<Application>
+            if (all != null && !all.contains(app)) all.add(app)
+            Log.i(MultiOpenApp.TAG, "set mInitialApplication -> ${app.javaClass.name}")
+        } catch (t: Throwable) {
+            Log.w(MultiOpenApp.TAG, "set mInitialApplication failed", t)
         }
     }
 }

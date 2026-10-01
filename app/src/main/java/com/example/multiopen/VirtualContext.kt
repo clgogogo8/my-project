@@ -36,6 +36,11 @@ class VirtualContext(
     override fun getApplicationContext(): Context = appProvider() ?: super.getApplicationContext()
     override fun getPackageName(): String = runtime?.app?.packageName ?: super.getPackageName()
 
+    // 微信换肤/字体缩放会 createConfigurationContext 派生新 context，默认走宿主 base 会丢掉插件资源；
+    // 再包一层，保证派生 context 的 getResources() 仍是插件资源
+    override fun createConfigurationContext(overrideConfiguration: android.content.res.Configuration): Context =
+        VirtualContext(super.createConfigurationContext(overrideConfiguration), instanceId, root, runtime, appProvider)
+
     // Service：指向插件自己的 Service 走进程内管理器，其它（系统服务等）原样交给 super
     override fun startService(service: Intent): ComponentName? =
         VirtualServices.start(baseContext, instanceId, runtime, service) ?: super.startService(service)
