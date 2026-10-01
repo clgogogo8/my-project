@@ -48,8 +48,10 @@ gradle wrapper
 - [x] 核心 Kernel（mCoreAccount）初始化：靠进程名伪装（`fakeProcessName` → 包名，多进程 Kernel 分发）+ provider 先于 Application.onCreate
 - [x] 启动期跨线程死锁：`ensure` 的 onCreate 移出锁（ForkJoin worker 回调 bindService 不再被锁住）
 - [x] 桩池（`StubActivity` + `StubActivity1..7` 轮换）：破 SINGLE_TOP 单桩启动循环 → **WelcomeActivity 创建、微信欢迎页显示出来**
-- [ ] 启动期 ANR：冷启动主线程忙 ~8s（`Displayed +7s917ms`）触发系统“无响应”，点“等待”可继续；待确认是否仅首次冷启动（dex2oat 未缓存）
-- [ ] 登录：连腾讯服务器做设备注册 / 安全校验，非官方容器 + 伪造环境下很可能被风控拦（能否通过不在可控范围）
+- [x] Cronet `BuildInfo` 崩溃（登录页 SIGTRAP@libcronet）：Pine ART hook `ApplicationPackageManager.getInstallerPackageName`，对虚拟包返回宿主 installer——微信绕过所有代理的 `ig5.n1` 路径最终也走这个 Java 方法，被 ART hook 从源头挡住（`ArtHook` + `top.canyie.pine:core`）
+- [x] **UI 可导航**：欢迎页 → 手机号登录页（`MobileInputUI`）→ 其他登录方式 → 账号密码登录页（`LoginUI`）全部稳定显示、无崩溃（真机验证）
+- [ ] 启动期 ANR：冷启动主线程忙 ~8s（`Displayed +8s`）触发系统“无响应”，点“等待”可继续；仅首次冷启动（dex2oat 未缓存）
+- [ ] 登录（**需用户本人操作 + 不可控**）：到登录输入页 OK；真正提交登录要连腾讯服务器做设备注册/安全校验/风控，非官方容器 + 伪造环境下很可能被拦，这一步不在代码能解决范围
 - [x] 桩池按 launchMode 分配：standard/singleTop 通用池 + singleTask/singleInstance 专用桩（manifest 声明）
 - [x] app 私有外部存储隔离（`getExternalFilesDir` 等 → 实例目录）
 - [ ] 竖屏锁定 / 透明主题的桩（深层页面可能需要）
