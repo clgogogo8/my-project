@@ -1,83 +1,84 @@
 # 测试结果
 
-- commit: f0112f8
-- 编译: 成功（BUILD SUCCESSFUL，:app / :test-hello / :test-multi）
+- commit: 38f1cbd（本地 HEAD 为 44bc91b，只比 38f1cbd 多了 debug 目录下的说明文件，代码相同）
+- 编译: 成功（:app，BUILD SUCCESSFUL）
 - 设备: 小米 M2011K2C / Android 14
 - 被测 APK: 微信 8.0.78（手机上已装的单个 base.apk，280614450 字节，arm64-v8a，非 split）
-- 现象: 白屏，焦点一直为空；约 10 秒后系统弹出"MultiOpen没有响应"（ANR），进程卡死；4 次 FATAL EXCEPTION（均在同一进程）。
-  资源自检通过，但 Resources$NotFoundException 仍然存在，崩溃点和上一轮（73fbb19）完全相同。
+- 现象: 仍然白屏，焦点一直为空；宿主进程反复崩溃重启，约 25 秒内 9 次 FATAL EXCEPTION（都在 main 线程，每次新进程，约每 4 秒一次）。
+  **Resources$NotFoundException 已经消失（0 次）**，换成了新的崩溃 `b96.b: mCoreAccount not initialized!`。本轮没有出现 ANR 弹窗。
 
 ## 关键 logcat（只含 MultiOpen 标签 + 崩溃栈）
 
-receiver registered 共 20 条、provider installed 共 30 条，均已折叠（都是微信的类名，无异常）。
+第 1 个进程（PID 23302）里 FATAL 之前的全部 MultiOpen 行；receiver registered 20 条、provider installed 30 条已折叠（都是微信类名）。
 
 ```
-19:18:55.311 I/MultiOpen(22558): IActivityManager hooked
-19:18:55.315 I/MultiOpen(22558): IPackageManager hooked
-19:19:05.552 I/MultiOpen(22558): extracted 209 so (arm64-v8a) -> /data/user/0/com.example.multiopen/files/virtual/1790849941595/lib
-19:19:21.201 I/MultiOpen(22558): resources built: cookie=15, apk=/data/user/0/com.example.multiopen/files/virtual/1790849941595/base.apk (280614450 bytes)
-19:19:21.201 I/MultiOpen(22558): resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
-19:19:22.347 I/MultiOpen(22558): resources built: cookie=15, apk=/data/user/0/com.example.multiopen/files/virtual/1790849941595/base.apk (280614450 bytes)
-19:19:22.347 I/MultiOpen(22558): resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
-19:19:23.669 E/MultiOpen(22558): plugin Application.onCreate failed
-19:19:23.669 E/MultiOpen(22558): android.content.res.Resources$NotFoundException
-19:19:23.669 E/MultiOpen(22558): Caused by: android.content.res.Resources$NotFoundException: Resource ID #0x7f11028f
-19:19:23.670 I/MultiOpen(22558): virtual Application created: com.tencent.mm.app.Application
-19:19:25.470 I/MultiOpen(22558): newActivity: stub -> com.tencent.mm.ui.LauncherUI
-19:19:25.518 I/MultiOpen(22558): virtual Service created: com.tencent.mm.ipcinvoker.wx_extension.service.MainProcessIPCService
+19:34:34.980 I/MultiOpen(23302): IActivityManager hooked
+19:34:34.983 I/MultiOpen(23302): IPackageManager hooked
+19:34:45.081 I/MultiOpen(23302): extracted 209 so (arm64-v8a) -> /data/user/0/com.example.multiopen/files/virtual/1790850881238/lib
+19:35:09.933 I/MultiOpen(23302): resources built: cookie=15, apk=/data/user/0/com.example.multiopen/files/virtual/1790850881238/base.apk (280614450 bytes)
+19:35:09.933 I/MultiOpen(23302): resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
+19:35:11.886 I/MultiOpen(23302): set mInitialApplication -> com.tencent.mm.app.Application
+19:35:12.351 E/MultiOpen(23302): plugin Application.onCreate failed
+19:35:12.351 E/MultiOpen(23302): b96.b: mCoreAccount not initialized!
+19:35:12.351 I/MultiOpen(23302): virtual Application created: com.tencent.mm.app.Application
+19:35:18.140 I/MultiOpen(23302): newActivity: stub -> com.tencent.mm.ui.LauncherUI
+19:35:18.183 I/MultiOpen(23302): virtual Service created: com.tencent.mm.ipcinvoker.wx_extension.service.MainProcessIPCService
 ```
 
-崩溃（FATAL EXCEPTION 共 4 次，PID 22558：[GT]ColdPool#2、[GT]ColdPool#6、main、ANR-Dump-Thread；最后一个是 ANR 触发，不是新问题）：
+`plugin Application.onCreate failed` 的堆栈（19:35:12，微信 Application.onCreate 里）：
 
 ```
-FATAL EXCEPTION: [GT]ColdPool#2
-android.content.res.Resources$NotFoundException: Resource ID #0x7f0e06ad
-    at le5.j.getLayout(Unknown Source:2)
-    at kw5.l0.invoke(Unknown Source:80) ← pp0.r.run ← q36.l.run ← r36.v.run ← j36.c.run
+b96.b: mCoreAccount not initialized!
+    at b96.a.g(Unknown Source:10)
+    at b96.a.f(Unknown Source:3)
+    at b96.a.c(Unknown Source:5)
+    at gp0.j1.b(Unknown Source:8)
+    at gp0.m.t(Unknown Source:10)
+    at hv1.a.onCreate(Unknown Source:3)
+    at ph5.w.access$1000 / ph5.u.compute / ph5.v.compute / ph5.w.transitLifecycleStatusOnDemand / ph5.n0.j / ph5.g0.run
+    at gp0.q1.call ← yu5.f.run ← yu5.h.a ← xu5.q.d / r / e
+    at com.tencent.mm.legacy.app.WeChatSplashStartup.a(Unknown Source:432)
+    at com.tencent.mm.legacy.app.WeChatSplash.a(Unknown Source:123)
+    at re5.p.b(Unknown Source:362)
+    at com.tencent.mm.app.MMApplicationLike.onCreate(Unknown Source:145)
+    at com.tencent.tinker.entry.TinkerApplicationInlineFence.handleMessageImpl(Unknown Source:152)
+```
 
-FATAL EXCEPTION: [GT]ColdPool#6
-android.content.res.Resources$NotFoundException: Resource ID #0x7f110838
-    at le5.j.openRawResource(Unknown Source:0)
-    at com.tencent.mm.plugin.report.service.j.a / j.b ← g0.Q ← g0.idkeyStat ← u44.f.idkeyStat
+第一个 FATAL（19:35:18.461，PID 23302，main 线程，与 `newActivity: stub -> LauncherUI` 同一时刻）：
 
+```
 FATAL EXCEPTION: main
-java.lang.RuntimeException: Unable to start activity ComponentInfo{com.example.multiopen/com.example.multiopen.StubActivity}: android.content.res.Resources$NotFoundException: Resource ID #0x7f110838
-Caused by: android.content.res.Resources$NotFoundException: Resource ID #0x7f110838
-    at le5.j.openRawResource(Unknown Source:0)
-    at com.tencent.mm.plugin.report.service.j.a(Unknown Source:16)
-    at com.tencent.mm.plugin.report.service.j.b(Unknown Source:11)
-    at com.tencent.mm.plugin.report.service.g0.Q(Unknown Source:17)
-    at com.tencent.mm.plugin.report.service.g0.idkeyStat(Unknown Source:128)
-    at u44.f.idkeyStat(Unknown Source:6)
-    at com.tencent.mm.sdk.platformtools.r4.Z(Unknown Source:67)
-    at com.tencent.mm.network.a3.j(Unknown Source:21)
-    at com.tencent.mm.booter.NotifyReceiver.c(Unknown Source:11)
-    at qt.m6.callback(Unknown Source:11)
-    at com.tencent.mm.sdk.event.d.d(Unknown Source:268)
-    at com.tencent.mm.sdk.event.IEvent.e(Unknown Source:3)
-    at com.tencent.mm.ui.ek.a(Unknown Source:16)
-    at com.tencent.mm.ui.MMFragmentActivity.onCreate(Unknown Source:43)
-    at com.tencent.mm.ui.LauncherUI.onCreate(Unknown Source:130)
+Process: com.example.multiopen, PID: 23302
+b96.b: mCoreAccount not initialized!
+    at b96.a.g(Unknown Source:10)
+    at b96.a.f(Unknown Source:3)
+    at b96.a.c(Unknown Source:5)
+    at gp0.j1.b(Unknown Source:8)
+    at b41.h9.h(Unknown Source:0)
+    at com.tencent.mm.ui.LauncherUI.onCreate(Unknown Source:1033)
     at com.example.multiopen.HookInstrumentation.callActivityOnCreate(HookInstrumentation.kt:44)
 ```
 
+其余 8 次 FATAL 的异常标题完全相同（都是 `b96.b: mCoreAccount not initialized!`），每次都是新进程重启后重复同样的流程。
+
 ## 本轮云端 Claude 要求的额外诊断
 
-- `resources built`: cookie=15, apk=.../virtual/1790849941595/base.apk (280614450 bytes)，出现 2 次（19:19:21 和 19:19:22），内容相同。
-  APK 字节数与手机上已装微信 base.apk 大小一致。
-- 资源自检: **self-check OK**（出现 2 次）: 0x7f1202a7 -> com.tencent.mm:style/lc。没有出现 self-check FAILED。
-  注意：自检用的是 0x7f1202a7，不是崩溃的那三个 ID。
-- 上一轮的 aapt2 结果（供参考，本轮未重跑）: 0x7f11028f（raw/domain_mainland，r/s/domain_mainland.json）、
-  0x7f0e06ad（layout/a8y，r/p/a8y.xml）、0x7f110838（raw/invalid_idkey，r/s/invalid_idkey.txt）
-  都在资源表里，对应文件也都在 APK 压缩包里；APK 里没有 res/ 目录，资源路径被混淆到 r/ 下。
-- 本地 AI 的推断（未看宿主代码，未验证）: 宿主构造的 Resources 能解析微信资源（自检 OK），
-  但报错的是微信自己的 Resources 类 le5.j（getLayout / openRawResource），
-  所以微信运行时实际用的 Resources 对象，可能不是宿主构造的那个。
+- 是否出现 `set mInitialApplication -> com.tencent.mm.app.Application`: **出现了**（每个新进程各 1 次，共 10 次：
+  19:35:11.886 / 19:35:22.087 / 19:35:28.619 / 19:35:36.714 / 19:35:42.554 / 19:35:46.487 / 19:35:50.367 / 19:35:54.449 / 19:35:58.387 / 19:36:02.130）。
+- `le5.j` 的 Resources$NotFoundException（0x7f0e06ad / 0x7f110838 / 0x7f11028f）: **全部消失**，日志里 0 次。
+- 资源自检: `resources built: cookie=15, ... (280614450 bytes)`、`resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc`，第 1 个进程各出现 1 次，没有 FAILED。
+- FATAL EXCEPTION 次数: 9；仍然白屏，没有 ANR 弹窗；每个进程都走到了 `newActivity: stub -> com.tencent.mm.ui.LauncherUI`（9 次）。
+- 新的第一个 `Caused by`: 本轮 FATAL 没有 `Caused by`，异常本身就是 `b96.b: mCoreAccount not initialized!`（完整栈见上）。
+- 本地 AI 的观察（未看宿主代码，未验证）:
+  - 这个新异常和之前的 `b96.b: Skeleton not initialized!`（commit e0908cb 之前出现过）是同一个异常类 `b96.b`、同一条调用链起点 `b96.a.g ← f ← c`，只是消息变了。
+  - 它先在 Application.onCreate 里出现一次（被 `plugin Application.onCreate failed` 捕获，没有崩溃），然后在 `LauncherUI.onCreate` 里又出现一次，这次没人捕获，进程崩溃。
+  - 所以微信 Application.onCreate 没有走完（在 `WeChatSplashStartup` 启动流程里抛了异常），导致微信内部的核心账号/Kernel 对象没有初始化。
 
 ## 异常计数
-Resources$NotFoundException: 7 次（含该字样的日志行数，包括 FATAL 标题、Caused by 以及 plugin Application.onCreate failed 里的行；
-  涉及 3 个不同资源 ID：0x7f11028f、0x7f0e06ad、0x7f110838）
-FATAL EXCEPTION: 4 次
+Resources$NotFoundException: 0 次
+mCoreAccount not initialized: 19 行（9 个 FATAL 标题 + 10 条 `E/MultiOpen` 的 Application.onCreate failed 标题行）
+FATAL EXCEPTION: 9 次
+plugin Application.onCreate failed: 10 次
 ACCESS_NETWORK_STATE: 0 次
 baseRevision must not be null: 0 次
 Skeleton not initialized: 0 次
