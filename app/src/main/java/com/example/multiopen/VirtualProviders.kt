@@ -26,18 +26,21 @@ object VirtualProviders {
         if (!installed.add(rt.app.instanceId)) return
         val manifest = runCatching { ManifestParser.parse(rt.app.apkFile) }.getOrNull() ?: return
         for (p in manifest.providers) {
-            if (p.authorities.isEmpty()) continue
+            if (p.name.isEmpty() || p.authorities.isEmpty()) continue
             try {
                 val provider = rt.classLoader.loadClass(p.name).getDeclaredConstructor().newInstance() as ContentProvider
                 val id = rt.app.instanceId
                 val vctx = VirtualContext(host.applicationContext, id, VirtualCore.dataDir(rt.app), rt) { VirtualApplications.get(id) }
-                val info = ProviderInfo().apply {
-                    name = p.name
-                    packageName = rt.app.packageName
-                    authority = p.authorities.joinToString(";")
-                    exported = false
-                    applicationInfo = VirtualAppInfo.applicationInfo(host, rt.app)
-                }
+                // 优先用从 APK 现解的真实 ProviderInfo（带 grantUriPermissions / exported / meta-data），
+                // FileProvider.attachInfo 会校验这些；解析不到再降级手工构造
+                val info = (VirtualAppInfo.componentInfo(host, rt.app, "getProviderInfo", p.name) as? ProviderInfo)
+                    ?: ProviderInfo().apply {
+                        name = p.name
+                        packageName = rt.app.packageName
+                        authority = p.authorities.joinToString(";")
+                        exported = false
+                        applicationInfo = VirtualAppInfo.applicationInfo(host, rt.app)
+                    }
                 provider.attachInfo(vctx, info) // 公开 API；内部会调用 onCreate()
                 p.authorities.forEach { byAuthority[it] = provider }
                 Log.i(MultiOpenApp.TAG, "provider installed: ${p.name} ${p.authorities}")

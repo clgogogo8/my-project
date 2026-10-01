@@ -42,4 +42,5 @@ gradle wrapper
 - [x] ContentProvider 实例化 + onCreate（`VirtualProviders`）
 - [ ] 后台保活 / startForeground / 推送拉起（需系统级桩 Service + AMS 方案）
 - [ ] content:// 跨组件解析（hook ContentResolver / getContentProvider，FileProvider 跨 App 分享）
+- [~] Tinker 热修复（微信 Application 基于 Tinker）：attachBaseContext 需 `ApplicationInfo.metaData`（已补 `GET_META_DATA`）；attachBaseContext 期间会重入 startService（已改占位登记）
 - [ ] 多桩池（不同 launchMode / 竖屏锁定 / 透明主题）

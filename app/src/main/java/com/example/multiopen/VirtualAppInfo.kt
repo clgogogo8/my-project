@@ -22,7 +22,10 @@ object VirtualAppInfo {
     }
 
     fun applicationInfo(host: Context, app: VirtualApp): ApplicationInfo? =
-        host.packageManager.getPackageArchiveInfo(app.apkFile.absolutePath, 0)?.applicationInfo?.also { patch(it, app) }
+        // 必须带 GET_META_DATA：Tinker 等框架在 Application.attachBaseContext 里读 application 级 meta-data
+        // （TINKER_ID 等），metaData 为 null 会直接抛 "baseRevision must not be null"
+        host.packageManager.getPackageArchiveInfo(app.apkFile.absolutePath, PackageManager.GET_META_DATA)
+            ?.applicationInfo?.also { patch(it, app) }
 
     fun packageInfo(host: Context, app: VirtualApp, flags: Int): PackageInfo? =
         host.packageManager.getPackageArchiveInfo(app.apkFile.absolutePath, flags)?.also { pi ->

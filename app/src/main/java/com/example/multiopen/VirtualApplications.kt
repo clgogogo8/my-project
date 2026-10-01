@@ -19,9 +19,16 @@ object VirtualApplications {
             val vctx = VirtualContext(host.applicationContext, rt.app.instanceId, VirtualCore.dataDir(rt.app), rt) { get(rt.app.instanceId) }
             val app = rt.classLoader.loadClass(rt.app.applicationClass ?: "android.app.Application")
                 .getDeclaredConstructor().newInstance() as Application
-            ContextWrapper::class.java.getDeclaredMethod("attachBaseContext", Context::class.java)
-                .apply { isAccessible = true }.invoke(app, vctx)
+            // 先登记占位：Tinker 等在 attachBaseContext 期间就会重入（startService → ensure），
+            // 若此时 apps 里没有，会重复创建第二个 Application。@Synchronized 是可重入锁，同线程重入安全。
             apps[rt.app.instanceId] = app
+            try {
+                ContextWrapper::class.java.getDeclaredMethod("attachBaseContext", Context::class.java)
+                    .apply { isAccessible = true }.invoke(app, vctx)
+            } catch (t: Throwable) {
+                apps.remove(rt.app.instanceId) // attachBaseContext 失败则回滚占位
+                throw t
+            }
             try { app.onCreate() } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "plugin Application.onCreate failed", t) }
             Log.i(MultiOpenApp.TAG, "virtual Application created: ${app.javaClass.name}")
             // Application 就绪后，把该实例的静态广播与 ContentProvider 装上（各自只装一次）

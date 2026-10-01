@@ -78,7 +78,7 @@ object VirtualServices {
         rt ?: return null
         val comp = intent.component ?: return null // 隐式 Service 暂不支持
         val pkg = rt.app.packageName
-        if (comp.packageName != pkg) return null
+        if (comp.packageName != pkg || comp.className.isEmpty()) return null
         val cls = if (comp.className.startsWith(".")) pkg + comp.className else comp.className
         return try {
             if (Service::class.java.isAssignableFrom(rt.classLoader.loadClass(cls))) cls else null
