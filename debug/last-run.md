@@ -1,111 +1,109 @@
 # 测试结果
 
-- commit: 767d19d（Add a stub Activity pool to break the SINGLE_TOP launch loop）
+- commit: 83bd5fc（launchMode-aware stub pool (singleTask/singleInstance stubs)；含 2198c40 外部存储重定向）
 - 编译: 成功（:app，BUILD SUCCESSFUL）
-- 设备: 小米 M2011K2C / Android 14
+- 设备: 小米 M2011K2C / Android 14（**手机上同时装着真正的微信 com.tencent.mm，uid 10260**；被测的是它的 APK 副本放进多开容器）
 - 被测 APK: 微信 8.0.78（手机上已装的单个 base.apk，280614450 字节，arm64-v8a，非 split）
-- 现象: **重大进展：微信界面显示出来了。** 桩池修好了启动循环，WelcomeActivity 被真正创建，屏幕上出现了微信的**欢迎页**（见下面描述）。
-  不过点击后约 8 秒内系统弹出了"MultiOpen没有响应"（ANR）弹窗，盖住了页面下半部分；这个弹窗**是启动期主线程忙太久留下的**，后面主线程其实是空闲的（见栈）。
-  我点了系统 ANR 弹窗上的"等待"（不是"确定"，也没有点微信界面里的任何东西）后，弹窗消失，欢迎页完整可见。
-  没有 FATAL EXCEPTION，进程存活。**我没有点"登录"/"注册"/"语言"，没有输入任何内容，没有登录任何账号。**
+- 现象:
+  1. **回归通过**：欢迎页仍然正常显示（深蓝地球图 + 右上"语言" + 底部绿色"登录"、白色"注册"）；没有 FATAL；启动期 ANR 弹窗和上一轮一样出现，我点系统弹窗上的"等待"后消失。
+  2. **点"登录"（只点了这一下，没有输入任何内容，没有登录）→ 新的崩溃**：登录页 `MobileInputUI` 被创建、系统记录 `Displayed ...StubActivity3 +569ms`，
+     约 **0.46 秒后宿主进程被 SIGSEGV 杀死**（`Process 25414 exited due to signal 11 (Segmentation fault)`）；系统随后重启进程，回到欢迎页。
+     **AndroidRuntime 里没有 FATAL EXCEPTION**（native 崩溃，不是 Java 异常）。
+     我的截图是点击后 3 秒才截的，那时已经是重启后的欢迎页，所以**我没有亲眼看到登录页的画面**，只有系统日志证明它被创建并显示过。
 
-## 微信界面（我看到的，只描述）
+## 关键 logcat（MultiOpen + 系统对本进程的行；全部是这一次点击"登录"前后的）
 
-- 全屏深蓝/黑色背景，中间是一张地球的大图，地球前面有一个小小的人物剪影站在地平线上（这就是微信的欢迎页）。
-- 右上角有白色文字按钮"语言"。
-- 底部左边是绿色实心按钮"登录"，底部右边是白色按钮"注册"。
-- 弹窗没有消除前（点"等待"之前），下半部分被"MultiOpen没有响应 / 等待 / 确定"盖住，只能看到图片和右上角"语言"；点"等待"之后，"登录"和"注册"两个按钮出现。
-- 我没有看到隐私政策弹窗或其他界面；焦点窗口是 `com.example.multiopen/.StubActivity2`。
-
-## 关键 logcat（只含 MultiOpen 标签 + 系统 ActivityTaskManager 里与 StubActivity 有关的行）
-
-### MultiOpen 行（30 条 provider installed、20 条 receiver registered 已折叠；没有 FATAL）
+### 点击"登录"的时间线（PID 25414，设备时钟）
 
 ```
-20:35:35.739 I/MultiOpen: IActivityManager hooked
-20:35:35.756 I/MultiOpen: IPackageManager hooked
-20:35:45.665 I/MultiOpen: extracted 209 so (arm64-v8a) -> /data/user/0/com.example.multiopen/files/virtual/1790854541722/lib
-20:35:59.640 I/MultiOpen: resources built: cookie=15, apk=/data/user/0/com.example.multiopen/files/virtual/1790854541722/base.apk (280614450 bytes)
-20:35:59.640 I/MultiOpen: resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
-20:36:00.735 I/MultiOpen: resources built: ...（同上，第 2 次）
-20:36:00.735 I/MultiOpen: resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
-20:36:00.735 I/MultiOpen: fake process name -> com.tencent.mm
-20:36:01.654 I/MultiOpen: set mInitialApplication -> com.tencent.mm.app.Application
-20:36:04.244 I/MultiOpen: virtual Service created: com.tencent.mm.service.ProcessService$MMProcessService
-20:36:05.048 E/MultiOpen: plugin Application.onCreate failed
-20:36:05.048 E/MultiOpen: java.lang.IllegalStateException: java.lang.IllegalStateException: Scene Activity process mismatch: component=com.tencent.wxpay.internal.presentation.MainProcessPaySceneActivity declared=null current=com.tencent.mm
-20:36:05.049 I/MultiOpen: virtual Application created: com.tencent.mm.app.Application
-20:36:05.109 I/MultiOpen: newActivity: stub -> com.tencent.mm.ui.LauncherUI
-20:36:06.146 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
-20:36:06.386 I/MultiOpen: virtual Service created: com.tencent.mm.ipcinvoker.wx_extension.service.PushProcessIPCService
-20:36:06.495 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
-20:36:06.821 I/MultiOpen: virtual Service created: androidx.work.impl.background.systemalarm.SystemAlarmService
-20:36:07.188 I/MultiOpen: newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity
+21:04:58.974 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.MobileInputUI -> stub (flags=0x0)
+21:04:58.984 I/ActivityTaskManager: START u0 {cmp=com.example.multiopen/.StubActivity3 (has extras)} ... result code=0
+21:04:59.019 I/MultiOpen: newActivity: stub -> com.tencent.mm.plugin.account.ui.MobileInputUI
+21:04:59.353 I/MultiOpen: virtual Service created: com.tencent.mm.service.ProcessService$SupportProcessService
+21:04:59.355 I/wm_on_create_called: ...StubActivity3,performCreate
+21:04:59.395 I/wm_on_resume_called: ...StubActivity3,RESUME_ACTIVITY
+21:04:59.555 I/ActivityTaskManager: Displayed com.example.multiopen/.StubActivity3 for user 0: +569ms
+21:04:59.601 I/chromium: [...mm_cronet_network_change_notify.cc(59)] remain size: 1
+21:04:59.603 I/AppsFilter: interaction: PackageSetting{... com.example.multiopen/10251} -> PackageSetting{... com.tencent.mm/10260} BLOCKED
+21:04:59.614 W/System.err: java.lang.ExceptionInInitializerError
+21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo.getInstance(Unknown Source:10)
+21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo.getAll(Unknown Source:0)
+21:04:59.614 W/System.err: Caused by: java.lang.IllegalArgumentException: Unknown package: com.tencent.mm
+21:04:59.614 W/System.err:     at android.content.pm.IPackageManager$Stub$Proxy.getInstallerPackageName(IPackageManager.java:5422)
+21:04:59.614 W/System.err:     at java.lang.reflect.Method.invoke(Native Method)
+21:04:59.614 W/System.err:     at ig5.n1.invoke(Unknown Source:202)            ← 一个 IPackageManager 的动态代理（`ig5.n1` 是混淆后的类名，看起来是微信自己的类，不是宿主 `com.example.multiopen` 包下的类；我没有进一步确认）
+21:04:59.614 W/System.err:     at java.lang.reflect.Proxy.invoke(Proxy.java:1006)
+21:04:59.614 W/System.err:     at $Proxy11.getInstallerPackageName(Unknown Source)
+21:04:59.614 W/System.err:     at android.app.ApplicationPackageManager.getInstallerPackageName(ApplicationPackageManager.java:2582)
+21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo.<init>(SourceFile:45)
+21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo.<init>(SourceFile:1)
+21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo$Holder.<clinit>(Unknown Source:3)
+21:04:59.614 W/System.err: Caused by: android.os.RemoteException: Remote stack trace:
+21:04:59.614 W/System.err:     at com.android.server.pm.ComputerEngine.getInstallerPackageName(ComputerEngine.java:5069) ...
+21:04:59.757 V/NativeCrash(29303): Dump Java in cloned process
+21:04:59.785 E/NativeCrash(25414): Dumper process exited with status -11
+21:04:59.785 V/NativeCrash(25414): Call crash dump callback.
+21:05:00.019 I/ActivityManager: Process com.example.multiopen (pid 25414) has died: fg  TOP
+21:05:00.020 I/am_proc_died: [0,25414,com.example.multiopen,0,2]
+21:05:00.021 I/Zygote: Process 25414 exited due to signal 11 (Segmentation fault)
+21:05:00.035 W/ActivityTaskManager: Force removing ActivityRecord{... com.example.multiopen/.StubActivity3 t86}: app died, no saved state
+21:05:00.053 I/ActivityManager: Start proc 26515:com.example.multiopen/u0a251 for top-activity {com.example.multiopen/com.example.multiopen.StubActivity2} caller=com.example.multiopen
 ```
 
-### 系统 ActivityTaskManager（StubActivity 相关，本轮重点）
+系统重启进程后（PID 26515）的 MultiOpen 行（系统自动恢复栈顶的 StubActivity2，微信 Application 再创建一遍，回到欢迎页）：
 
 ```
-20:35:59.654 I/ActivityTaskManager: START u0 {cmp=com.example.multiopen/.StubActivity (has extras)} ... result code=0          ← 启动 LauncherUI
-20:36:06.155 I/ActivityTaskManager: START u0 {flg=0x20000000 cmp=com.example.multiopen/.StubActivity1 (has extras)} ... result code=0   ← WelcomeActivity（第 1 次）
-20:36:06.504 I/ActivityTaskManager: START u0 {flg=0x20000000 cmp=com.example.multiopen/.StubActivity2 (has extras)} ... result code=0   ← WelcomeActivity（第 2 次）
-20:36:07.564 I/ActivityTaskManager: Displayed com.example.multiopen/.StubActivity2 for user 0: +7s917ms
+21:05:00.385 I/MultiOpen: IActivityManager hooked
+21:05:00.387 I/MultiOpen: IPackageManager hooked
+21:05:00.531 I/MultiOpen: resources built: cookie=15, apk=.../virtual/1790856202165/base.apk (280614450 bytes)
+21:05:00.531 I/MultiOpen: resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
+21:05:00.532 I/MultiOpen: fake process name -> com.tencent.mm
+21:05:01.266 I/MultiOpen: set mInitialApplication -> com.tencent.mm.app.Application
+21:05:02.783 I/MultiOpen: virtual Service created: com.tencent.mm.service.ProcessService$MMProcessService
+21:05:03.036 E/MultiOpen: plugin Application.onCreate failed     （同前：Scene Activity process mismatch ... declared=null current=com.tencent.mm）
+21:05:03.037 I/MultiOpen: virtual Application created: com.tencent.mm.app.Application
+21:05:03.105 I/MultiOpen: newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity
 ```
 
-另外有 ActivityTaskManager 的 W 级行（没有时间戳，我没有对应到秒）：
-```
-W/ActivityTaskManager: Activity top resumed state loss timeout for ActivityRecord{... com.example.multiopen/.MainActivity t80}
-W/ActivityTaskManager: Activity pause timeout for ActivityRecord{... com.example.multiopen/.MainActivity t80}
-W/ActivityTaskManager: Activity top resumed state loss timeout for ActivityRecord{... com.example.multiopen/.StubActivity t80}
-W/ActivityTaskManager: Activity pause timeout for ActivityRecord{... com.example.multiopen/.StubActivity t80}
-W/ActivityTaskManager: Launch timeout has expired, giving up wake lock!
-```
-
-### 看门狗主线程栈（3 条，state 都是 RUNNABLE，但 #2/#3 是空闲）
+### 欢迎页阶段（点"登录"之前，进程 25414）
 
 ```
-20:36:07.814 main-thread stack #1 (state=RUNNABLE):
-    at android.view.DisplayEventReceiver.nativeGetLatestVsyncEventData(Native Method)
-    at android.view.DisplayEventReceiver.getLatestVsyncEventData(DisplayEventReceiver.java:348)
-    at android.view.Choreographer$FrameData.update(Choreographer.java:1447)
-    at android.view.Choreographer.doFrame(Choreographer.java:956)
-    at android.view.Choreographer$FrameDisplayEventReceiver.run(Choreographer.java:1617)
-    at android.os.Handler.handleCallback ← Looper.loopOnce ← Looper.loop ← ActivityThread.main …   （在画一帧）
-
-20:36:13.815 main-thread stack #2 (state=RUNNABLE):
-    at android.os.MessageQueue.nativePollOnce(Native Method)
-    at android.os.MessageQueue.next(MessageQueue.java:344)
-    at android.os.Looper.loopOnce(Looper.java:176)
-    at android.os.Looper.loop(Looper.java:314)
-    at android.app.ActivityThread.main(ActivityThread.java:8857) …   （主线程空闲，在等消息）
-
-20:36:19.837 main-thread stack #3 (state=RUNNABLE):   ← 与 #2 相同（nativePollOnce，空闲）
+rewriteIntent: ...WelcomeActivity -> stub (flags=0x20000000)  ×2
+newActivity: stub -> LauncherUI；newActivity: stub -> WelcomeActivity
+START StubActivity code=0、StubActivity1 code=0、StubActivity2 code=0（与上一轮相同）
 ```
-
-bg 线程（20:36:13.8 采样，共 26 个）：全部是 WAITING / TIMED_WAITING 的空闲线程（`[GT]HotPool#0~7`、`wc_srvinit_0~5`、`matrix_x_0~2`、`MMCrashANRThread-0/1`、`IPCThreadPool#Thread-0/1`、
-`pool-4-thread-1`、`Recovery.LogWriter`、`Zidl Java DestructorThread`、`Thread-11`、`[GT]HCPerfManager`）。**没有 BLOCKED，没有 RUNNABLE，没有任何线程在等锁。**
+（30 条 provider installed、20 条 receiver registered 已折叠；这一阶段没有 FATAL。）
 
 ## 本轮云端 Claude 要求的重点
 
-- **循环有没有停: 停了。** `rewriteIntent: ... WelcomeActivity -> stub` 只有 **2 次**（上一轮 319 次、再上一轮 735 次）。
-- **WelcomeActivity 有没有被真正创建: 是。** `newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity`（20:36:07.188）出现了。
-- **ActivityTaskManager 的 result code: 全部是 0**。StubActivity 相关的 3 条 START 全是 `result code=0`（新建）；`code=3` 为 0 条。
-  这两次 WelcomeActivity 的启动分别分配到了 `StubActivity1`、`StubActivity2`（轮换分配，目标桩 ≠ 栈顶桩），符合预期。
-- **微信有没有显示出界面: 有，欢迎页**（描述见上；登录/注册按钮可见，没有进一步操作）。
-- 新崩溃/新卡点: 没有新崩溃（FATAL 0）。唯一的新现象是**启动期 ANR 弹窗**：
-  - 点击后第一次采样（约 +8 秒）弹窗就已经在了，对应 `Displayed ...StubActivity2: +7s917ms` 和 ActivityTaskManager 的 `resumed state loss timeout` / `pause timeout` / `Launch timeout` 警告：
-    启动期间主线程长时间忙，系统等不到它响应生命周期事务，就弹了 ANR。
-  - 到 +14 秒、+20 秒的看门狗采样时主线程是空闲的（`nativePollOnce`），说明启动完成后主线程没有卡。
-  - 点系统弹窗的"等待"后，弹窗没有再出现（点完 4 秒后的窗口列表里只有 `StubActivity2`，没有 Application Not Responding）。
-- 本地 AI 的观察（未验证）: 启动期主线程忙了约 8 秒（Application.onCreate 里的微信初始化，从 `set mInitialApplication` 20:36:01.654 到 `virtual Application created` 20:36:05.049，再到 LauncherUI/WelcomeActivity 的创建和首帧）。
-  如果要消除 ANR 弹窗，需要缩短主线程上的启动耗时（或让不必要的初始化异步），这是后面的优化项，不影响"能显示出界面"这个结论。
+1. **回归: 欢迎页仍正常显示，没有新的 FATAL。** ✔
+2. **桩分配（点"登录"后）**: `rewriteIntent: MobileInputUI -> stub (flags=0x0)`，分配到的是 **`StubActivity3`（通用池，standard/singleTop 那一组）**，**不是** StubTask*/StubInstance*。
+   这一次点击没有走到 singleTask/singleInstance 专用桩（因为崩溃发生在 MobileInputUI 显示之后）。
+   `newActivity: stub -> com.tencent.mm.plugin.account.ui.MobileInputUI` 出现了。
+3. **result code**: 登录页那条 `START ... StubActivity3 ... result code=0`（新建成功）。本轮 StubActivity* 的 START 共 4 条，全部 `code=0`。
+4. **点进去崩了**: 是。登录页创建并显示后，进程在约 0.46 秒内收到 SIGSEGV 死亡。**没有刷屏循环**（rewriteIntent 总共 3 次）。
+
+## 本地 AI 的观察（未验证，没有 tombstone 可读）
+
+- 死因证据只有这些：`Zygote: Process 25414 exited due to signal 11 (Segmentation fault)`，`am_proc_died`，MIUI 的 `NativeCrash: Dumper process exited with status -11`。
+  **我读不到 native 的栈**：`/data/tombstones` 权限不够，logcat 里没有 `DEBUG`/`F/libc` 的 backtrace，AndroidRuntime 也没有 FATAL。
+- 进程死亡前约 0.4 秒（21:04:59.614；NativeCrash 的记录在约 170 毫秒之后）有一个 **Cronet 相关的 Java 异常**：`org.chromium.base.BuildInfo$Holder.<clinit>` 在 `getInstallerPackageName("com.tencent.mm")` 里抛
+  `IllegalArgumentException: Unknown package: com.tencent.mm`，变成 `ExceptionInInitializerError`（打到 System.err）。
+  - 这次调用经过一个 IPackageManager 的动态代理（`ig5.n1.invoke` → `$Proxy11`，类名混淆，看起来是微信自己的），最终到了系统 PackageManagerService，系统回"Unknown package"。
+  - 同一时刻系统日志有 `AppsFilter: interaction: ... com.example.multiopen/10251 -> ... com.tencent.mm/10260 BLOCKED`：**包可见性过滤**把宿主看真实微信包的权限挡住了
+    （手机上真的装着 com.tencent.mm，但宿主没有 `<queries>`/`QUERY_ALL_PACKAGES` 能看见它）。
+  - 虚拟微信的包名正好等于手机上真实微信的包名，所以像 `getInstallerPackageName` 这类按包名查询的调用，看起来没有被宿主的 PackageManager 钩子拦住，直接到了真实系统（这是我的推断，没有核对宿主钩子的覆盖范围）。
+  - **这是推测**：Cronet 的 native 初始化可能通过 JNI 调 `BuildInfo.getAll()`，类初始化失败后 native 拿到 null / 异常没处理，触发 SIGSEGV。我没有证据证明这两件事有因果关系，只是时间上相邻（约 170 毫秒内）。
+- 环境因素提醒：**这台手机装着真实的微信**，这可能让上面的"Unknown package"和 AppsFilter 的行为与"手机上没装微信"的情况不同；如果云端想排除这个干扰，可以在没装真实微信的设备上对比，或者在宿主里对 `com.tencent.mm` 的 `getInstallerPackageName` 等包名查询返回虚拟包信息。
+- 我没有点"注册"，也没有测 singleTask / singleInstance 桩（这一步需要登录页稳定显示后才能继续点下去）。
 
 ## 异常计数
-FATAL EXCEPTION: 0 次
-plugin Application.onCreate failed: 1 次（被捕获：Scene Activity process mismatch，与前两轮相同）
-rewriteIntent(WelcomeActivity -> stub): 2 次（flags=0x20000000）
-newActivity: stub: 2 次（LauncherUI、WelcomeActivity）
-ActivityTaskManager START StubActivity*: 3 次，result code=0 共 3 次，result code=3 共 0 次
+FATAL EXCEPTION（AndroidRuntime）: 0 次
+native 崩溃: 1 次（SIGSEGV，PID 25414，点"登录"后约 0.46 秒；无 tombstone 可读）
+plugin Application.onCreate failed: 2 次（被捕获：Scene Activity process mismatch；第 1 次启动一次 + 崩溃重启后一次）
+rewriteIntent: 3 次（WelcomeActivity ×2，flags=0x20000000；MobileInputUI ×1，flags=0x0）
+newActivity: stub: 4 次（LauncherUI、WelcomeActivity、MobileInputUI、重启后再一次 WelcomeActivity）
+ActivityTaskManager START StubActivity*: 4 次，全部 result code=0
 mCoreAccount not initialized: 0 次
 Resources$NotFoundException: 0 次
 ACCESS_NETWORK_STATE: 0 次
@@ -115,4 +113,4 @@ UnsatisfiedLinkError: 0 次
 ClassNotFoundException: 0 次
 SecurityException: 0 次
 NoClassDefFoundError: 0 次
-ANR 弹窗: 有（约 +8 秒出现；点系统弹窗上的"等待"后消失）
+ANR 弹窗: 有（启动期，点系统弹窗"等待"后消失）；点"登录"之后没有再出现 ANR
