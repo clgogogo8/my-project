@@ -1,63 +1,79 @@
-# 测试结果
+# 测试结果（启动 ANR 二次启动验证，无代码改动）
 
-- commit: a11ea77（Serve virtual-package content:// providers in-process via AMS hook；本地 HEAD 即该提交）
-- 编译: 成功（:app，BUILD SUCCESSFUL）
-- 设备: 小米 M2011K2C / Android 14，手机上没有真实微信；微信 8.0.78 的 APK 是电脑备份副本（单个 base.apk，280614450 字节，arm64-v8a，非 split）
-- 现象: **回归通过**——欢迎页 → 手机号登录页（MobileInputUI）→ 账号/密码登录页（LoginUI）全部稳定显示，宿主进程 PID 6757 全程存活，没有崩溃、没有 native 崩溃、没有新的 ANR/黑屏。
-  欢迎页启动期有一次系统 ANR 弹窗（点系统弹窗上的"等待"后消失）；之后点"登录"、"使用其他登录方式"、"用微信号/QQ号/邮箱登录"都正常。
-  **没有输入任何账号/密码，没有点"同意并继续/同意并登录"，没有登录。**
+- commit: af0b0f9（Note content:// in-process resolution landed; queue ANR cold-start probe）。与上一轮 a11ea77/984f1c5 相比 app 源码没有改动（`git diff` 对 app/、settings.gradle.kts、build.gradle.kts 为空）。
+- 编译: 成功（:app，BUILD SUCCESSFUL，宿主重装）
+- 设备: 小米 M2011K2C / Android 14，手机上没有真实微信；微信 8.0.78 的 APK 是电脑备份副本（单个 base.apk，280614450 字节，arm64-v8a，非 split）。
+- 做法: `pm clear` 一次制造冷启动 → 添加实例 → 第 1 次打开（冷启动）→ 用返回键退出实例（宿主进程没杀，PID 8781 全程不变，没有 pm clear）→ 第 2 次打开同一个实例 → 退出 → 第 3 次打开。每次点击后观察约 24 秒（每 2 秒查一次有没有 ANR 弹窗）。**没有登录、没有输入任何东西。**
+- 现象: **ANR 只出现在第 1 次（冷启动）**；第 2、3 次打开都是 0.43～0.45 秒就显示出欢迎页，没有 ANR。没有崩溃，进程 PID 8781 全程存活。
 
-## 关键 logcat（MultiOpen + Pine + ActivityTaskManager；30 条 provider installed、20 条 receiver registered 已折叠）
+## 三次打开对比（本轮重点 1）
+
+| 次数 | 类型 | `Displayed ...` | ANR 弹窗 |
+|---|---|---|---|
+| 第 1 次 | 冷启动（宿主刚装、`pm clear` 后） | `22:29:30.401 Displayed com.example.multiopen/.StubActivity2 for user 0: +8s769ms` | **有**（点击后约 12 秒的采样里发现；之前几轮是约 8～17 秒内出现；点系统弹窗"等待"后消失） |
+| 第 2 次 | 热（进程已存活，Application 已建好） | `22:29:58.537 Displayed com.example.multiopen/.StubActivity7 for user 0: +450ms` | **无** |
+| 第 3 次 | 热 | `22:30:30.232 Displayed com.example.multiopen/.StubActivity4 for user 0: +427ms` | **无** |
+
+- 第 2、3 次明显变快：从约 **8.8 秒降到约 0.43～0.45 秒**，ANR 不再出现。三次的画面都是微信欢迎页（我截图确认了第 3 次：深蓝地球图、右上"语言"、底部绿色"登录"和白色"注册"）。
+- 第 2、3 次的日志里**没有** `resources built` / `fake process name` / `set mInitialApplication` / `virtual Application created` / `provider installed` / `receiver registered`，只有 `rewriteIntent`/`newActivity: stub -> LauncherUI` → 两次 `rewriteIntent ...WelcomeActivity` → `newActivity: stub -> WelcomeActivity` → `Displayed`。
+  也就是说二次打开只重新创建 Activity，不再重走 Application/provider 初始化。
+
+## 冷启动 8.77 秒拆分（本轮重点 2，第 1 次，设备时钟）
+
+`Displayed +8s769ms` 的起点约是 22:29:21.632（点击实例的时刻），终点 22:29:30.401。
 
 ```
-22:20:07.229 I/Pine: Pine native init...
-22:20:07.252 I/MultiOpen: ART hook installed: ApplicationPackageManager.getInstallerPackageName
-22:23:12.653 I/MultiOpen: resources built ... (280614450 bytes) / resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
-22:23:12.654 I/MultiOpen: fake process name -> com.tencent.mm
-22:23:13.594 I/MultiOpen: set mInitialApplication -> com.tencent.mm.app.Application
-22:23:15.369 I/Pine: handleBridge: artMethod=0x71838858 ...                    ← getInstallerPackageName 被 Pine 接管（Application 初始化阶段）
-22:23:16.525 E/MultiOpen: plugin Application.onCreate failed                    （同前：Scene Activity process mismatch ... declared=null；被捕获）
-22:23:16.525 I/MultiOpen: virtual Application created: com.tencent.mm.app.Application
-22:23:16.603 I/MultiOpen: newActivity: stub -> com.tencent.mm.ui.LauncherUI
-22:23:17.255 rewriteIntent: ...WelcomeActivity -> stub (flags=0x20000000) → START StubActivity1 code=0
-22:23:17.515 rewriteIntent: ...WelcomeActivity -> stub (flags=0x20000000) → START StubActivity2 code=0
-22:23:18.955 newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity
-22:23:19.580 Displayed com.example.multiopen/.StubActivity2 for user 0: +8s0ms
-22:23:33.367 rewriteIntent: ...MobileInputUI -> stub (flags=0x0) → START StubActivity3 code=0              ← 点"登录"
-22:23:33.417 newActivity: stub -> com.tencent.mm.plugin.account.ui.MobileInputUI
-22:23:33.949 Displayed com.example.multiopen/.StubActivity3 for user 0: +572ms
-22:23:34.018 I/Pine: handleBridge: artMethod=0x71838858 ...                    ← 登录页显示后 69 毫秒，Pine 又接管一次（前几轮崩溃的时刻），无异常
-22:23:44.375 rewriteIntent: ...LoginUI -> stub (flags=0x0) → START StubActivity4 code=0                  ← 点"用微信号/QQ号/邮箱登录"
-22:23:44.463 newActivity: stub -> com.tencent.mm.plugin.account.ui.LoginUI
-22:23:44.763 Displayed com.example.multiopen/.StubActivity4 for user 0: +382ms
+22:28:48.824  IActivityManager hooked           （宿主进程启动，早于点击；与本次耗时无关）
+22:29:21.576  resources built（第 1 次）         ← 点击实例，开始加载
+22:29:22.736  resources built（第 2 次）
+22:29:22.737  fake process name -> com.tencent.mm
+22:29:23.672  set mInitialApplication
+22:29:23.768 ～ 22:29:27.459  provider installed ×30（首条 ～ 末条，共约 3.7 秒）
+22:29:28.202  virtual Service created: ...ProcessService$MMProcessService
+22:29:28.915  plugin Application.onCreate failed（被捕获） / virtual Application created
+22:29:28.967 ～ 28.987  receiver registered ×20
+22:29:28.987  newActivity: stub -> com.tencent.mm.ui.LauncherUI
+22:29:29.557  rewriteIntent: ...WelcomeActivity -> stub (flags=0x20000000)
+22:29:29.796  rewriteIntent: ...WelcomeActivity -> stub (flags=0x20000000)
+22:29:30.149  newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity
+22:29:30.401  Displayed ...StubActivity2 +8s769ms
 ```
 
-## 本轮云端 Claude 要求的重点
+各段耗时（由上面的时间戳相减）：
 
-1. **回归: 通过。** 欢迎页、手机号登录页、账号/密码页都稳定显示（我截图确认了账号/密码页：标题"微信号/QQ号/邮箱登录"，账号、密码输入框，灰色"同意并登录"，"用手机号登录"链接，"找回密码 | 更多"），无崩溃，与上一轮一致。
-2. **`served local content provider: <authority>`: 0 次，没有出现。** 日志里也没有任何含 `getContentProvider` / `authority` / `content://` / `local content` 的行（排除 `provider installed` 之外）。
-   我的理解（推测）：这条日志只在微信向系统请求"已登记的插件 provider 的 authority"时才会打；本轮的操作（欢迎页 → 登录页 → 账号/密码页）没有触发这类 content:// 查询，所以没有命中。我没有核对微信内部什么时候会发这类查询。
-3. **新的崩溃 / ANR / 黑屏: 没有。** FATAL EXCEPTION 0 次；NativeCrash 0 次；进程死亡 0 次。（启动期那一次 ANR 弹窗上一轮之前就有，点"等待"后消失。）
-4. **头像选择 / 从相册选图 / 拍照等触发 FileProvider 的入口: 我没有去点（跳过）。**
-   原因：在登录相关页面里我没有看到能不登录就进入这类入口的元素；我所知的入口在"注册"流程里（需要进入注册页、会涉及相册），而相册会显示手机里的照片，涉及隐私，我也没有被要求去走注册流程，所以不点。需要的话请云端告诉我可以走哪条具体路径。
+| 阶段 | 起止 | 耗时 |
+|---|---|---|
+| 资源 / 进程名 / Application 构造（到 `set mInitialApplication`） | 21.632 → 23.672 | 约 **2.0 秒** |
+| **30 个 ContentProvider 安装** | 23.768 → 27.459 | 约 **3.7 秒** |
+| 微信 Application.onCreate 其余部分（到 `virtual Application created`） | 27.459 → 28.915 | 约 **1.5 秒** |
+| LauncherUI 创建 → WelcomeActivity 创建 → 首帧 Displayed | 28.915 → 30.401 | 约 **1.5 秒** |
+| 合计 | 21.632 → 30.401 | 约 8.8 秒 |
 
-### 本地 AI 的备注
+- **最大的一块是 provider 安装（约 3.7 秒，约占 42%）**；其次是启动前的资源/Application 构造（约 2.0 秒）、Application.onCreate（约 1.5 秒）、从 LauncherUI 到首帧（约 1.5 秒）。
+- 我无法从日志里区分每一段里"dex 加载"和"微信自己的初始化"各占多少（日志只有这些点），所以上面是按日志点划分的，不是按"dex / onCreate / 资源"划分的。
 
-- Pine hook 的工作状态与上一轮一致：`ART hook installed` 1 次；`handleBridge` 2 次（22:23:15.369 在 Application 初始化阶段；22:23:34.018 在登录页 Displayed 后约 69 毫秒，正是之前 Cronet 触发 `Unknown package` 崩溃的时刻）；`Unknown package` 0 次，没有崩溃。
-- 桩的使用与上一轮相同：`MobileInputUI → StubActivity3`，`LoginUI → StubActivity4`，`result code=0`；没有 `StubTask*` / `StubInstance*`。
-- 欢迎页启动期 `Displayed ...StubActivity2: +8s0ms`（约 8 秒）还是慢，伴随一次 ANR 弹窗；与本次改动无关，之前就有。
-- 操作插曲（与被测应用无关）：这一轮添加实例时系统文件选择器又停在了 `下载内容 > advanced` 子目录，我先点面包屑"下载内容"回到根目录再选 `real.apk`，添加成功；只是浏览，没有选择或改动其他文件。
+## 其余回归（本轮重点 3）
+
+- 新崩溃: 没有。FATAL EXCEPTION 0 次；NativeCrash 0 次；`Unknown package` 0 次。
+- 日志里唯一一条"进程被杀"的记录是 `22:29:22.474 I/Zygote: Process 17569 exited due to signal 9 (Killed)`——**17569 是 `com.miui.mishare.connectivity`（MIUI 的系统服务），不是宿主（宿主始终是 PID 8781）**，与本测试无关。
+- `plugin Application.onCreate failed`（Scene Activity process mismatch ... declared=null）仍是 1 次，被捕获，只发生在第 1 次（冷启动）。
+
+## 本地 AI 的观察（未验证）
+
+1. **用返回键退出微信实例会触发微信重新拉起 LauncherUI**：日志里每次我按返回键，都出现 `rewriteIntent: com.tencent.mm.ui.LauncherUI -> stub (flags=0x4000000)`（`FLAG_ACTIVITY_CLEAR_TOP`）+ `newActivity: stub -> LauncherUI`（第 1 次退出：22:29:53.345 和 22:29:55.616；第 2 次退出：22:30:25.091 和 22:30:27.365，共 4 次），
+   并且第一次按返回后还额外创建了一个 WelcomeActivity（22:29:53.580）。我按了 2 次返回才回到 MultiOpen 列表。所以"退出实例"在这个容器里并不干净：返回键会让微信在欢迎页上重新拉起 LauncherUI。
+2. **桩池是轮换分配，并且已经回绕**：`START` 的桩依次是 `StubActivity, 1, 2, 3, 4, 5, 6, 7`（8 个），然后又回到 `StubActivity, 1, 2, 3, 4`。
+   第 2 次打开显示在 `StubActivity7`，第 3 次显示在 `StubActivity4`。本轮回绕时没有出问题（STARTs 全部 result code=0），但池只有 8 个，长时间使用时旧实例可能被新实例占用同一个桩，我没有测这种情况。
+3. 冷启动的主要耗时在 30 个 provider 的安装（约 3.7 秒）。如果要缩短 ANR 前的主线程阻塞，这一段可能是最值得优化（例如放到后台线程或按需安装）的地方——这是我的推断，没有试过。
 
 ## 异常计数
-FATAL EXCEPTION: 0 次（本轮没有 uiautomator 的 NPE）
+FATAL EXCEPTION: 0 次
 native 崩溃 / NativeCrash: 0 次
-进程死亡: 0 次（宿主进程 PID 6757 全程存活）
-`served local content provider`: 0 次
+宿主进程死亡: 0 次（PID 8781 全程存活）；系统里被杀的 `com.miui.mishare.connectivity`（PID 17569）与我们无关
 `Unknown package: com.tencent.mm`: 0 次
-`ART hook installed`: 1 次；Pine `handleBridge`: 2 次
-plugin Application.onCreate failed: 1 次（被捕获：Scene Activity process mismatch）
-rewriteIntent: 4 次（WelcomeActivity ×2，flags=0x20000000；MobileInputUI ×1、LoginUI ×1，flags=0x0）
-START StubActivity*: 5 次（StubActivity、StubActivity1～4），全部 result code=0
+plugin Application.onCreate failed: 1 次（被捕获，仅冷启动）
+`newActivity: stub -> LauncherUI`: 7 次；`-> WelcomeActivity`: 5 次；`rewriteIntent: LauncherUI -> stub (flags=0x4000000)`: 4 次
+START StubActivity*: 13 次，全部 result code=0
 mCoreAccount not initialized: 0 次
 Resources$NotFoundException: 0 次
 ACCESS_NETWORK_STATE: 0 次
@@ -67,4 +83,4 @@ UnsatisfiedLinkError: 0 次
 ClassNotFoundException: 0 次
 SecurityException: 0 次
 NoClassDefFoundError: 0 次
-ANR 弹窗: 有 1 次（欢迎页启动期；点"等待"后消失）
+ANR 弹窗: 第 1 次（冷启动）有 1 次；第 2、3 次 0 次
