@@ -16,6 +16,10 @@ object VirtualApplications {
     fun ensure(host: Context, rt: PluginRuntime): Application? {
         apps[rt.app.instanceId]?.let { return it }
         return try {
+            // 微信是多进程 App，按“当前进程名”决定初始化哪些 Kernel；它的主进程名 == 包名。
+            // 不伪装的话进程名是宿主的 com.example.multiopen，微信判定“非主进程”，跳过账号 Kernel 初始化，
+            // 之后 LauncherUI 访问 mCoreAccount 就 "not initialized"。必须赶在微信任何代码跑之前改。
+            fakeProcessName(rt.app.packageName)
             val vctx = VirtualContext(host.applicationContext, rt.app.instanceId, VirtualCore.dataDir(rt.app), rt) { get(rt.app.instanceId) }
             val app = rt.classLoader.loadClass(rt.app.applicationClass ?: "android.app.Application")
                 .getDeclaredConstructor().newInstance() as Application
@@ -45,6 +49,30 @@ object VirtualApplications {
         } catch (t: Throwable) {
             Log.e(MultiOpenApp.TAG, "create virtual Application failed", t)
             null
+        }
+    }
+
+    /**
+     * 伪装进程名：改 ActivityThread.mBoundApplication.processName（Application.getProcessName() /
+     * ActivityThread.currentProcessName() 都读它）和其 appInfo.processName。
+     * 读 /proc/self/cmdline 的 native 路径改不了，但微信主要走 ActivityThread。进程级生效，多开单进程近似。
+     */
+    private fun fakeProcessName(name: String) {
+        try {
+            val atClass = Class.forName("android.app.ActivityThread")
+            val at = atClass.getMethod("currentActivityThread").invoke(null)
+            val bound = atClass.getDeclaredField("mBoundApplication").apply { isAccessible = true }.get(at) ?: return
+            runCatching {
+                bound.javaClass.getDeclaredField("processName").apply { isAccessible = true }.set(bound, name)
+            }
+            runCatching {
+                val appInfo = bound.javaClass.getDeclaredField("appInfo").apply { isAccessible = true }
+                    .get(bound) as? android.content.pm.ApplicationInfo
+                appInfo?.processName = name
+            }
+            Log.i(MultiOpenApp.TAG, "fake process name -> $name")
+        } catch (t: Throwable) {
+            Log.w(MultiOpenApp.TAG, "fake process name failed", t)
         }
     }
 
