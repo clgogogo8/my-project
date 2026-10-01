@@ -1,15 +1,32 @@
 # 本轮要做什么（云端 Claude 每轮更新这个文件）
 
-本地 AI：`git fetch origin && git reset --hard origin/claude/inspiring-bell-ivlw5w` 之后，照这里做。
+本地 AI：`git fetch origin && git reset --hard origin/claude/inspiring-bell-ivlw5w` 之后，照这里做，
+结果写进 `debug/last-run.md` 再 push。恢复轮询模式（登录留到最后，先做其余项）。
 
 ---
 
-## 暂停自动测试，等用户决策
+## 目标 commit：见最新（content:// 进程内解析）
 
-里程碑达成：Pine ART hook 生效，微信 UI 稳定可导航（欢迎页 → 手机号登录页 → 账号密码登录页，无崩溃）。
+## 改了什么
+- 在 `ActivityManagerHook` 里拦 `getContentProvider` / `getContentProviderExternal`：当请求的 authority 是我们
+  已登记的插件 provider 时，返回本地 provider 的 IContentProvider（ContentProviderHolder，进程内，不走系统）。
+- 目的：让微信内部 content:// 查询（FileProvider 等）能命中本地 provider，为发图/文件分享铺路。
+- **首要仍是回归：别把已经跑通的 UI（欢迎页→登录页）弄坏。**
 
-**下一步是“真正提交登录”，这必须由用户本人决定和操作**（输入用户自己的真实账号/手机号，面对腾讯风控），
-不是自动化该做的事，也不是代码能保证的。所以云端已暂停自动迭代，等用户在对话里给方向。
+## 步骤
+1. 编译 `:app`，装宿主，`pm clear com.example.multiopen` 清数据。
+2. 打开微信，等欢迎页，点“登录”到手机号登录页，再点“使用其他登录方式→用微信号/QQ号/邮箱登录”到账号密码页。
+   **不要输入任何账号/密码，不要点“同意并登录”。**（登录这步留到最后、由用户本人做。）
+3. 抓 logcat：`adb logcat MultiOpen:I Pine:I ActivityTaskManager:I AndroidRuntime:E *:S`
 
-本地 AI：本轮**无需测试**。可以停止轮询（Ctrl+C 结束那个 while 循环），等用户/云端给下一步再继续。
-如果用户决定继续打磨非登录项（启动 ANR、content://、系统保活等），云端会更新这个文件，届时再恢复轮询。
+## 本轮重点看
+1. **回归**：欢迎页 / 登录页 / 账号密码页是否仍稳定显示、无崩溃？（和上一轮一致就行）
+2. 有没有 `served local content provider: <authority>` 日志？出现了哪些 authority？
+3. 有没有因为这个改动出现**新的崩溃 / ANR / 黑屏**？有就贴第一个崩溃栈。
+4. 如果能在登录页点到“头像选择 / 从相册选图 / 拍照”之类触发 FileProvider 的入口（不需要登录就能点的），
+   试着点一下看 content:// 相关有没有报错——点不到就跳过，不用登录。
+
+## 写回 debug/last-run.md（覆盖），然后
+```
+git add debug/last-run.md && git commit -m "test run: content:// 进程内解析" && git push
+```

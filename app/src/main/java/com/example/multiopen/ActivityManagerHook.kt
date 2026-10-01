@@ -1,5 +1,6 @@
 package com.example.multiopen
 
+import android.content.Context
 import android.os.Build
 import android.util.Log
 import java.lang.reflect.Field
@@ -25,8 +26,9 @@ object ActivityManagerHook {
     @Volatile private var installed = false
 
     @Synchronized
-    fun install(hostPackage: String, isVirtual: (String) -> Boolean) {
+    fun install(host: Context, isVirtual: (String) -> Boolean) {
         if (installed) return
+        val hostPackage = host.packageName
         try {
             val (singleton, instanceField) = resolveSingleton()
             // 先触发 Singleton.get()，确保 mInstance 已初始化再替换
@@ -46,6 +48,10 @@ object ActivityManagerHook {
                         if (v is String && isVirtual(v)) a[i] = hostPackage
                     }
                 }
+                // content://：对已登记的虚拟 authority，直接返回本地 provider，不走系统（系统没装该包会失败）
+                if (method.name == "getContentProvider" || method.name == "getContentProviderExternal") {
+                    runCatching { serveLocalProvider(host, args) }.getOrNull()?.let { return@newProxyInstance it }
+                }
                 try {
                     method.invoke(original, *(args ?: emptyArray()))
                 } catch (e: InvocationTargetException) {
@@ -58,6 +64,30 @@ object ActivityManagerHook {
         } catch (t: Throwable) {
             Log.e(MultiOpenApp.TAG, "ActivityManagerHook 安装失败", t)
         }
+    }
+
+    /**
+     * 若 getContentProvider 请求的 authority 是我们已登记的插件 provider，构造一个 ContentProviderHolder
+     * 直接返回本地 provider 的 IContentProvider（进程内 Transport，不再 bind 系统）。都是 hidden 类型，
+     * 反射构造；失败返回 null → 透传。noReleaseNeeded=true 让客户端不再向系统释放。
+     */
+    private fun serveLocalProvider(host: Context, args: Array<Any?>?): Any? {
+        val auth = args?.mapNotNull { it as? String }?.firstOrNull { VirtualProviders.get(it) != null } ?: return null
+        val provider = VirtualProviders.get(auth) ?: return null
+        val icp = android.content.ContentProvider::class.java
+            .getDeclaredMethod("getIContentProvider").apply { isAccessible = true }.invoke(provider)
+        val info = android.content.pm.ProviderInfo().apply {
+            authority = auth
+            name = provider.javaClass.name
+            packageName = host.packageName          // 用宿主包名，holder.provider 已是本地，系统不再 bind/校验
+            applicationInfo = host.applicationInfo
+        }
+        val holderClass = Class.forName("android.app.ContentProviderHolder")
+        val holder = holderClass.getConstructor(android.content.pm.ProviderInfo::class.java).newInstance(info)
+        holderClass.getField("provider").set(holder, icp)
+        runCatching { holderClass.getField("noReleaseNeeded").set(holder, true) }
+        Log.i(MultiOpenApp.TAG, "served local content provider: $auth")
+        return holder
     }
 
     /** 返回 (Singleton 实例, 它的 mInstance 字段) */
