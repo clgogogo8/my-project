@@ -57,6 +57,6 @@ gradle wrapper
 - [ ] 竖屏锁定 / 透明主题的桩（深层页面可能需要）
 
 ### 还需真机专项（都要动 hidden 类型或 native，不能盲写，需单独一轮真机调）
-- [ ] content:// 跨组件解析：在 `ActivityManagerHook` 里拦 `getContentProvider`，用动态代理包 `IContentProvider`、反射构造 `ContentProviderHolder` 返回本地 provider（FileProvider 分享）
+- [~] content:// 跨组件解析：`ActivityManagerHook` 拦 `getContentProvider`/`getContentProviderExternal`，对已登记虚拟 authority 返回本地 provider 的 `IContentProvider`（`ContentProviderHolder`，进程内）。代码就位、回归通过；实际 FileProvider 分享效果需登录后聊天场景验证
 - [ ] 系统级保活 / startForeground / 推送：manifest 声明桩 Service，把 startService/startForeground 经 AMS 走系统（当前是进程内模拟，系统不感知）
 - [ ] native 层路径重定向 + 设备信息伪装：需 PLT/inline hook（如 xhook）改 /proc、Environment 公共路径、设备标识；与登录风控强相关，且不保证能过
