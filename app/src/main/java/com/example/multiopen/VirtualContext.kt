@@ -16,8 +16,9 @@ import java.io.FileOutputStream
 /**
  * 包在插件 Activity 外层的 Context，把数据相关路径重定向到实例私有目录，实现多开的数据隔离。
  * getApplicationInfo() 伪装成插件自己的（包名/数据目录/native 目录/APK 路径），很多 App 和库读这里拿路径。
- * 仍未处理：getPackageName()——直接改会让 startActivity 等走到 AMS 的 binder 调用时包名与宿主 uid 不符而抛
- * SecurityException，需要先 hook IActivityManager 代理才能安全伪装（下一步路线图）。外部存储同理待办。
+ * getPackageName() 返回插件包名：本地读取是安全的，而真正过 binder 的调用由 ActivityManagerHook 把
+ * 误入 AMS 的虚拟包名归一回宿主包名兜底（getOpPackageName 是 @hide，ContextWrapper 仍转发给宿主 base）。
+ * 仍未处理：用插件包名查 PackageManager 会 NameNotFound（需 hook PMS 代理），外部存储重定向。
  */
 class VirtualContext(
     base: Context,
@@ -30,6 +31,7 @@ class VirtualContext(
     override fun getAssets(): AssetManager = runtime?.resources?.assets ?: super.getAssets()
     override fun getClassLoader(): ClassLoader = runtime?.classLoader ?: super.getClassLoader()
     override fun getApplicationContext(): Context = appProvider() ?: super.getApplicationContext()
+    override fun getPackageName(): String = runtime?.app?.packageName ?: super.getPackageName()
 
     /** 用插件 APK 自身的 ApplicationInfo，并把 so/数据/APK 路径改到本实例目录 */
     private val appInfo: ApplicationInfo by lazy {

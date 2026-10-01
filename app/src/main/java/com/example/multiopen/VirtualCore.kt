@@ -3,6 +3,7 @@ package com.example.multiopen
 import android.content.Context
 import android.net.Uri
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 data class VirtualApp(
     val instanceId: String, val apkFile: File, val label: String, val packageName: String, val mainClass: String,
@@ -18,6 +19,9 @@ data class VirtualApp(
 /** 管理虚拟应用的安装与实例目录。每个实例有独立的 base.apk 与数据目录，从而实现"多开"。 */
 object VirtualCore {
     private fun root(ctx: Context) = File(ctx.filesDir, "virtual").apply { mkdirs() }
+
+    /** 已安装的所有虚拟应用包名（内存快照）。ActivityManagerHook 每次 binder 调用都会查它，必须零磁盘 IO。 */
+    val knownPackages: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     /** 把 APK 复制进沙箱；同一个 APK 可安装多次，得到不同 instanceId */
     fun install(ctx: Context, uri: Uri): VirtualApp {
@@ -49,6 +53,7 @@ object VirtualCore {
     private fun load(apk: File): VirtualApp {
         val dir = apk.parentFile!!
         val pkg = File(dir, "package").readText()
+        knownPackages.add(pkg)
         val themes = File(dir, "themes").takeIf { it.exists() }?.readLines().orEmpty()
             .mapNotNull { l -> l.split("=", limit = 2).takeIf { it.size == 2 }?.let { it[0] to (it[1].toIntOrNull() ?: 0) } }.toMap()
         return VirtualApp(dir.name, apk, "$pkg #${dir.name.takeLast(5)}", pkg, File(dir, "main_class").readText(),

@@ -18,6 +18,10 @@ class MultiOpenApp : Application() {
     override fun onCreate() {
         super.onCreate()
         try { Hooks.install(this) } catch (t: Throwable) { Log.e(TAG, "hook install failed", t) }
+        try {
+            VirtualCore.list(this) // 预热：把已安装的虚拟包名加载进 knownPackages
+            ActivityManagerHook.install(packageName) { it in VirtualCore.knownPackages }
+        } catch (t: Throwable) { Log.e(TAG, "AM hook install failed", t) }
     }
 
     companion object { const val TAG = "MultiOpen" }
