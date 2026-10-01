@@ -43,4 +43,6 @@ gradle wrapper
 - [ ] 后台保活 / startForeground / 推送拉起（需系统级桩 Service + AMS 方案）
 - [ ] content:// 跨组件解析（hook ContentResolver / getContentProvider，FileProvider 跨 App 分享）
 - [~] Tinker 热修复（微信 Application 基于 Tinker）：attachBaseContext 需 `ApplicationInfo.metaData`（已补 `GET_META_DATA`）；attachBaseContext 期间会重入 startService（已改占位登记）
+- [x] 宿主权限声明（INTERNET / ACCESS_NETWORK_STATE 等）：修 Cronet 的 "Neither user nor process has ACCESS_NETWORK_STATE"
+- [ ] 资源系统：微信部分资源 `Resources$NotFoundException`（白屏主因，`le5.j` 查不到 0x7f11…/0x7f0e… 等）。微信是插件化 + 资源混淆，疑似需 LoadedApk 级资源虚拟化而非手工 new Resources；待 aapt 确认这些 ID 是否在 base.apk 里再定方向
 - [ ] 多桩池（不同 launchMode / 竖屏锁定 / 透明主题）

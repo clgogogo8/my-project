@@ -1,4 +1,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 插件代码跑在宿主进程里，用的是宿主的权限集。这里声明插件（如微信）常用的权限。
+         normal 级（INTERNET / ACCESS_NETWORK_STATE / ACCESS_WIFI_STATE / WAKE_LOCK / VIBRATE）声明即授予，
+         直接解决 Cronet 的 "Neither user nor process has ACCESS_NETWORK_STATE"；
+         dangerous 级（存储/相机/麦克风/定位/电话）声明后仍需运行时动态申请。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
     <application android:name=".MultiOpenApp" android:label="MultiOpen" android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
