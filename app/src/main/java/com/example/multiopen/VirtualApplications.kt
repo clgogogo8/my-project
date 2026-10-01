@@ -33,11 +33,14 @@ object VirtualApplications {
             // platformtools 等进程级基础设施（常在后台线程）通过它拿全局 Context/Resources，否则拿到宿主
             // Application，其 Resources 不含微信 apk → le5.j 查资源 NotFound。必须在 onCreate 前设好。
             setInitialApplication(app)
+            // 系统真实启动顺序：attachBaseContext → 所有 ContentProvider.onCreate → Application.onCreate。
+            // 微信把核心 Kernel（mCoreAccount）初始化放在某个 ContentProvider 里，所以 provider 必须先于
+            // Application.onCreate，否则 onCreate 里访问 mCoreAccount 会 "not initialized"。
+            try { VirtualProviders.ensure(host, rt) } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "providers ensure failed", t) }
             try { app.onCreate() } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "plugin Application.onCreate failed", t) }
             Log.i(MultiOpenApp.TAG, "virtual Application created: ${app.javaClass.name}")
-            // Application 就绪后，把该实例的静态广播与 ContentProvider 装上（各自只装一次）
+            // 静态广播注册时机不敏感，放在 onCreate 之后
             try { VirtualReceivers.ensure(host, rt) } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "receivers ensure failed", t) }
-            try { VirtualProviders.ensure(host, rt) } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "providers ensure failed", t) }
             app
         } catch (t: Throwable) {
             Log.e(MultiOpenApp.TAG, "create virtual Application failed", t)
