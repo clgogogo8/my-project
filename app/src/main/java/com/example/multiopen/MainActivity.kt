@@ -32,10 +32,13 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         if (req == REQ_PICK && res == RESULT_OK && data?.data != null) {
-            // MVP：入口类名先写死为 demo；后续应解析 APK 的 Manifest 自动获取
-            VirtualCore.install(this, data.data!!, "com.example.demoplugin.DemoActivity")
-            Toast.makeText(this, "已添加", Toast.LENGTH_SHORT).show()
-            refresh()
+            try {
+                val app = VirtualCore.install(this, data.data!!)
+                Toast.makeText(this, "已添加 ${app.packageName}\n入口 ${app.mainClass}", Toast.LENGTH_LONG).show()
+                refresh()
+            } catch (e: Exception) {
+                Toast.makeText(this, "添加失败: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

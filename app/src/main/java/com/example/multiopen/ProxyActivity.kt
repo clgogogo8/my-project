@@ -3,6 +3,7 @@ package com.example.multiopen
 import android.app.Activity
 import android.content.res.Resources
 import android.os.Bundle
+import android.widget.Toast
 import com.example.multiopen.api.PluginActivity
 
 /** 宿主侧的"壳"Activity：加载插件类并转发生命周期 */
@@ -15,8 +16,13 @@ class ProxyActivity : Activity() {
         val apk = intent.getStringExtra(EXTRA_INSTANCE)!!
         val app = VirtualCore.list(this).first { it.instanceId == apk }
         runtime = PluginRuntime(this, app)
-        plugin = (runtime!!.classLoader.loadClass(app.mainClass).getDeclaredConstructor().newInstance() as PluginActivity)
-            .also { it.attach(this); it.onCreate(savedInstanceState) }
+        val instance = runtime!!.classLoader.loadClass(app.mainClass).getDeclaredConstructor().newInstance()
+        if (instance !is PluginActivity) {
+            // MVP 限制：尚不支持运行未经修改的普通 Activity（路线图第 3 步）
+            Toast.makeText(this, "${app.mainClass} 不是 PluginActivity，暂不支持", Toast.LENGTH_LONG).show()
+            finish(); return
+        }
+        plugin = instance.also { it.attach(this); it.onCreate(savedInstanceState) }
     }
 
     override fun getResources(): Resources = runtime?.resources ?: super.getResources()

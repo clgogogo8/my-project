@@ -15,7 +15,7 @@ gradle wrapper
 
 ## 路线图
 1. [x] MVP：加载"按我们的接口写的"插件
-2. [ ] 解析 APK Manifest，自动获取入口与组件
+2. [x] 解析 APK Manifest，自动获取包名与入口 Activity（`ManifestParser`）
 3. [ ] 桩 Activity 池 + Hook ActivityManager，运行**未修改**的第三方 APK
 4. [ ] Service / Broadcast / ContentProvider / 通知
 5. [ ] Native 层路径重定向与设备信息伪装
