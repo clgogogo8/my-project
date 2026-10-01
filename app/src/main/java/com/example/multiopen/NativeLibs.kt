@@ -6,7 +6,7 @@ import java.io.File
 import java.util.zip.ZipFile
 
 /**
- * 从 APK 里解出 native 库（lib/<abi>/*.so）到实例的 lib 目录。
+ * 从 APK 里解出 native 库（lib/<abi>/ 目录下的 .so 文件）到实例的 lib 目录。
  * 普通系统安装时由 PackageManager 完成这一步；多开里我们自己做，否则 System.loadLibrary 找不到 so，
  * 像微信这种重度依赖 native 的 App 一启动就崩。
  */
