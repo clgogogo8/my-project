@@ -3,6 +3,7 @@ package com.example.multiopen
 import android.content.Context
 import android.content.res.AssetManager
 import android.content.res.Resources
+import android.util.Log
 import dalvik.system.DexClassLoader
 import java.io.File
 
@@ -20,7 +21,20 @@ class PluginRuntime(host: Context, val app: VirtualApp, isolated: Boolean = fals
         val libPath = app.nativeLibDir.takeIf { it.isDirectory && it.list()?.isNotEmpty() == true }?.absolutePath
         classLoader = DexClassLoader(app.apkFile.absolutePath, optDir.absolutePath, libPath, parent)
         val am = AssetManager::class.java.getDeclaredConstructor().newInstance()
-        AssetManager::class.java.getMethod("addAssetPath", String::class.java).invoke(am, app.apkFile.absolutePath)
+        val cookie = AssetManager::class.java.getMethod("addAssetPath", String::class.java)
+            .invoke(am, app.apkFile.absolutePath) as Int
         resources = Resources(am, host.resources.displayMetrics, host.resources.configuration)
+        // 诊断：cookie==0 表示 addAssetPath 没加载成功（apk 路径/只读/过大等）；自检用插件自身 theme 资源，
+        // 能解析说明“我们的 Resources 没问题，是插件绕过它另拿了 Resources”，否则是加载层面的问题。
+        Log.i(TAG, "resources built: cookie=$cookie, apk=${app.apkFile} (${app.apkFile.length()} bytes)")
+        if (app.appTheme != 0) {
+            try {
+                Log.i(TAG, "resources self-check OK: 0x${Integer.toHexString(app.appTheme)} -> ${resources.getResourceName(app.appTheme)}")
+            } catch (t: Throwable) {
+                Log.e(TAG, "resources self-check FAILED: cannot resolve 0x${Integer.toHexString(app.appTheme)} from ${app.apkFile}", t)
+            }
+        }
     }
+
+    companion object { const val TAG = "MultiOpen" }
 }
