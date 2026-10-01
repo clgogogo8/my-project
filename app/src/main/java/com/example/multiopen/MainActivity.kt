@@ -9,6 +9,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.Toast
+import com.example.multiopen.api.PluginActivity
 
 class MainActivity : Activity() {
     private lateinit var list: ListView
@@ -45,8 +46,20 @@ class MainActivity : Activity() {
     private fun refresh() {
         val apps = VirtualCore.list(this)
         list.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, apps.map { it.label })
-        list.setOnItemClickListener { _, _, i, _ ->
-            startActivity(Intent(this, ProxyActivity::class.java).putExtra(ProxyActivity.EXTRA_INSTANCE, apps[i].instanceId))
+        list.setOnItemClickListener { _, _, i, _ -> launch(apps[i]) }
+    }
+
+    /** 入口类是 PluginActivity → 走 ProxyActivity；否则按普通 APK 走桩 Activity + Instrumentation 替换 */
+    private fun launch(app: VirtualApp) {
+        val isPlugin = try {
+            PluginActivity::class.java.isAssignableFrom(VirtualRuntimes.get(this, app, false).classLoader.loadClass(app.mainClass))
+        } catch (t: Throwable) { false }
+        if (isPlugin) {
+            startActivity(Intent(this, ProxyActivity::class.java).putExtra(ProxyActivity.EXTRA_INSTANCE, app.instanceId))
+        } else {
+            startActivity(Intent(this, StubActivity::class.java)
+                .putExtra(StubActivity.EXTRA_INSTANCE, app.instanceId)
+                .putExtra(StubActivity.EXTRA_CLASS, app.mainClass))
         }
     }
 

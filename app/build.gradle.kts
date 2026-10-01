@@ -12,4 +12,5 @@ android {
 dependencies {
     implementation(project(":plugin-api"))
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
 }

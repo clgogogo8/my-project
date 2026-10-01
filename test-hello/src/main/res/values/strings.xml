@@ -1,0 +1,3 @@
+<resources>
+    <string name="hello_text">Hello from a PLAIN APK (string from R.string)</string>
+</resources>

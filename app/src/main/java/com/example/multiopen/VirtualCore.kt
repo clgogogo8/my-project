@@ -4,7 +4,7 @@ import android.content.Context
 import android.net.Uri
 import java.io.File
 
-data class VirtualApp(val instanceId: String, val apkFile: File, val label: String, val packageName: String, val mainClass: String)
+data class VirtualApp(val instanceId: String, val apkFile: File, val label: String, val packageName: String, val mainClass: String, val themeRes: Int = 0)
 
 /** 管理虚拟应用的安装与实例目录。每个实例有独立的 base.apk 与数据目录，从而实现"多开"。 */
 object VirtualCore {
@@ -23,6 +23,7 @@ object VirtualCore {
         if (launcher == null) { dir.deleteRecursively(); error("APK 中没有找到任何 Activity") }
         File(dir, "main_class").writeText(launcher)
         File(dir, "package").writeText(m.packageName)
+        File(dir, "theme").writeText((m.activityThemes[launcher]?.takeIf { it != 0 } ?: m.appTheme).toString())
         return load(apk)
     }
 
@@ -34,6 +35,7 @@ object VirtualCore {
     private fun load(apk: File): VirtualApp {
         val dir = apk.parentFile!!
         val pkg = File(dir, "package").readText()
-        return VirtualApp(dir.name, apk, "$pkg #${dir.name.takeLast(5)}", pkg, File(dir, "main_class").readText())
+        return VirtualApp(dir.name, apk, "$pkg #${dir.name.takeLast(5)}", pkg, File(dir, "main_class").readText(),
+            File(dir, "theme").takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull() ?: 0)
     }
 }

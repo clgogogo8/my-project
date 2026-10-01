@@ -10,6 +10,9 @@ data class ApkManifest(
     val activities: List<String>,
     /** 带 MAIN + LAUNCHER intent-filter 的 Activity，找不到则为 null */
     val launcher: String?,
+    /** application 级 android:theme 的资源 ID（插件资源表里的 ID），无则 0 */
+    val appTheme: Int,
+    val activityThemes: Map<String, Int>,
 )
 
 /** 解析 APK 里的二进制 AndroidManifest.xml（不依赖系统安装） */
@@ -26,6 +29,8 @@ object ManifestParser {
         var label: String? = null
         val activities = mutableListOf<String>()
         var launcher: String? = null
+        var appTheme = 0
+        val themes = mutableMapOf<String, Int>()
 
         am.openXmlResourceParser(cookie, "AndroidManifest.xml").use { p ->
             var curActivity: String? = null
@@ -36,10 +41,14 @@ object ManifestParser {
                 if (ev == XmlPullParser.START_TAG) {
                     when (p.name) {
                         "manifest" -> pkg = p.getAttributeValue(null, "package").orEmpty()
-                        "application" -> label = p.getAttributeValue(ANDROID_NS, "label")
+                        "application" -> {
+                            label = p.getAttributeValue(ANDROID_NS, "label")
+                            appTheme = p.getAttributeResourceValue(ANDROID_NS, "theme", 0)
+                        }
                         "activity", "activity-alias" -> {
                             curActivity = full(pkg, p.getAttributeValue(ANDROID_NS, "name"))
                             if (p.name == "activity") activities += curActivity
+                            themes[curActivity] = p.getAttributeResourceValue(ANDROID_NS, "theme", 0)
                             isMain = false; isLauncher = false
                         }
                         "action" -> if (p.getAttributeValue(ANDROID_NS, "name") == "android.intent.action.MAIN") isMain = true
@@ -53,7 +62,7 @@ object ManifestParser {
                 ev = p.next()
             }
         }
-        return ApkManifest(pkg, label, activities, launcher)
+        return ApkManifest(pkg, label, activities, launcher, appTheme, themes)
     }
 
     private fun full(pkg: String, name: String?): String = when {

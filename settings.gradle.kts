@@ -5,4 +5,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "multi-open"
-include(":app", ":plugin-api", ":demo-plugin")
+include(":app", ":plugin-api", ":demo-plugin", ":test-hello")
