@@ -5,27 +5,27 @@
 
 ---
 
-## 目标 commit：见最新（含“进程名伪装”的改动）
+## 目标 commit：见最新（含 Watchdog 主线程栈诊断）
 
 ## 改了什么（供你理解，不用改源码）
-- 上一轮确认 provider 顺序已对，但 mCoreAccount 仍崩，说明不是 provider 时序问题。
-- 本轮：伪装进程名。微信按进程名决定初始化哪些 Kernel，主进程名==包名；不伪装时进程名是宿主
-  com.example.multiopen，微信判定非主进程、跳过账号 Kernel 初始化 → mCoreAccount not initialized。
-  现在在微信代码跑之前把进程名改成 com.tencent.mm。
+- 进程名伪装成功：mCoreAccount 崩溃消失、不再重启。现在变成主线程卡死在 Application.onCreate 里 → ANR。
+- 本轮不改行为，只加诊断：插件启动后后台线程每 6 秒打印一次主线程调用栈（日志 tag MultiOpen，
+  形如 `main-thread stack #1 (state=...)`），用来定位主线程到底阻塞在哪个调用/锁上。
 
 ## 步骤
 1. 编译 `:app`，装宿主，`pm clear com.example.multiopen` 清数据。
-2. 重新添加微信 APK，打开，用 adb 观察约 20 秒。
+2. 重新添加微信 APK，打开，**一直观察到至少 20 秒后**（让 watchdog 打满 3 次：约 +6s/+12s/+18s）。
+   ANR 弹窗出现也不要点“确定”，让进程保持卡住状态，等 watchdog 打完。
 3. 抓 logcat（只 MultiOpen 标签 + 崩溃栈）。
 
-## 本轮重点看
-- 是否出现日志：`fake process name -> com.tencent.mm`
-- `mCoreAccount not initialized` 还在不在、`plugin Application.onCreate failed` 还有没有。
-- `FATAL EXCEPTION` 次数、是否仍白屏、是否还反复重启。
-- **若 mCoreAccount 崩消失但换了新崩溃**：把新的第一个异常/`Caused by:` 完整贴出来。
-- 微信若显示出任何界面（闪屏/隐私弹窗/登录页），务必说明 —— 重大进展。
+## 本轮重点看（最关键）
+- 三条 `main-thread stack #1/#2/#3` 的完整内容 —— **这是本轮的核心产物，请原样完整贴回**（每条 top 多帧）。
+- 对比三次栈是否一样（卡在同一处 = 真卡死；在变 = 在慢慢推进）。
+- 栈顶附近若出现 `wait` / `park` / `await` / `lock` / `CountDownLatch` / `Binder` / `nativePollOnce` 以外的
+  微信自己的方法（com.tencent.* / 某个 IPC / Service 绑定），重点标出来。
+- 其余照常：有没有新异常、有没有界面。
 
 ## 写回 debug/last-run.md（覆盖），然后
 ```
-git add debug/last-run.md && git commit -m "test run: 进程名伪装" && git push
+git add debug/last-run.md && git commit -m "test run: watchdog 主线程栈" && git push
 ```

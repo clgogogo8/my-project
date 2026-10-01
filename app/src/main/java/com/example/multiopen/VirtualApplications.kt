@@ -20,6 +20,7 @@ object VirtualApplications {
             // 不伪装的话进程名是宿主的 com.example.multiopen，微信判定“非主进程”，跳过账号 Kernel 初始化，
             // 之后 LauncherUI 访问 mCoreAccount 就 "not initialized"。必须赶在微信任何代码跑之前改。
             fakeProcessName(rt.app.packageName)
+            Watchdog.start() // 诊断：主线程卡住时定时打印它的调用栈
             val vctx = VirtualContext(host.applicationContext, rt.app.instanceId, VirtualCore.dataDir(rt.app), rt) { get(rt.app.instanceId) }
             val app = rt.classLoader.loadClass(rt.app.applicationClass ?: "android.app.Application")
                 .getDeclaredConstructor().newInstance() as Application
