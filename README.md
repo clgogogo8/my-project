@@ -19,7 +19,7 @@ gradle wrapper
 3. [~] 运行**未修改**的普通 APK
    - [x] 3a：解除隐藏 API 限制 + 桩 Activity + Instrumentation 替换（`HookInstrumentation`），启动普通 APK 的入口 Activity，替换 Resources/Theme（待真机验证）
    - [x] 3b-1：插件内 Activity 间跳转（`ExecHookInstrumentation` + `rewriteIntent`）、插件自己的 `Application`（`VirtualApplications`）、按 Activity 取主题（待真机验证，测试用 `test-multi`）
-   - [ ] 3b-2：桩池（launchMode / 方向 / 透明主题）、Service / Broadcast / ContentProvider
+   - [~] 3b-2：Service / Broadcast / ContentProvider（进程内实现，见下方“适配微信”）；桩池（launchMode / 方向 / 透明主题）待办
    - [x] 数据隔离：`VirtualContext` 重定向 files/cache/databases/SharedPreferences 到实例目录（待真机验证）
    - [~] 3c：伪装与路径
      - [x] native so：按设备 ABI 从 APK 解出 `lib/<abi>/*.so`（`NativeLibs`），作为 `DexClassLoader` 的 librarySearchPath
@@ -27,7 +27,7 @@ gradle wrapper
      - [x] `getPackageName()` 伪装 + `IActivityManager` 代理 hook（`ActivityManagerHook`）：应用读插件包名，binder 层把误入 AMS 的虚拟包名归一回宿主包名
      - [x] `PackageManager` 代理 hook（`PackageManagerHook`）：拦截对虚拟包的 getPackageInfo / getApplicationInfo，用 `VirtualAppInfo` 现解 APK 构造结果
      - [ ] 外部存储重定向
-4. [ ] Service / Broadcast / ContentProvider / 通知
+4. [~] Service / Broadcast / ContentProvider（进程内，已可回调生命周期）；系统级保活与通知待办
 5. [ ] Native 层路径重定向与设备信息伪装
 6. [ ] 兼容性适配（隐藏 API 限制、64/32 位 so）
 
@@ -37,5 +37,9 @@ gradle wrapper
 - [x] `ApplicationInfo` 路径伪装（微信大量读自身 dataDir / nativeLibraryDir）
 - [x] `IActivityManager` 代理 hook + `getPackageName` 伪装（微信几乎处处校验自身包名）
 - [x] `PackageManager` 代理 hook：微信用自身包名查 `getPackageInfo` / `getApplicationInfo` 不再 NameNotFound
-- [~] Service / BroadcastReceiver / ContentProvider（FileProvider 分享、推送、后台保活）
+- [x] Service（进程内分发 onCreate/onStartCommand/onBind/onDestroy，`VirtualServices`）
+- [x] 静态 BroadcastReceiver（按 action 动态注册转发，`VirtualReceivers`）
+- [x] ContentProvider 实例化 + onCreate（`VirtualProviders`）
+- [ ] 后台保活 / startForeground / 推送拉起（需系统级桩 Service + AMS 方案）
+- [ ] content:// 跨组件解析（hook ContentResolver / getContentProvider，FileProvider 跨 App 分享）
 - [ ] 多桩池（不同 launchMode / 竖屏锁定 / 透明主题）
