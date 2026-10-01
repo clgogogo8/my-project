@@ -87,6 +87,9 @@ open class HookInstrumentation(protected val ctx: Context, protected val base: I
             setField(ContextThemeWrapper::class.java, activity, "mTheme", null)
             setField(ContextThemeWrapper::class.java, activity, "mThemeResource", 0)
             activity.setTheme(rt.app.themeFor(activity.javaClass.name).takeIf { it != 0 } ?: android.R.style.Theme_Material_Light_DarkActionBar)
+            // 按插件清单里的 screenOrientation 锁方向（桩 Activity 本身没声明方向，这里补上）
+            runCatching { rt.manifest.activityOrientations[activity.javaClass.name] }.getOrNull()?.takeIf { it != -1 }
+                ?.let { runCatching { activity.requestedOrientation = it } }
             // Activity.getApplication() 返回插件自己的 Application
             VirtualApplications.get(instance)?.let { setField(Activity::class.java, activity, "mApplication", it) }
             // 最后一步：包一层 Context，重定向数据目录、ClassLoader、applicationContext

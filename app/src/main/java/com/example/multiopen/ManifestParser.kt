@@ -22,6 +22,8 @@ data class ApkManifest(
     val activityThemes: Map<String, Int>,
     /** 每个 Activity 的 launchMode（0=standard 1=singleTop 2=singleTask 3=singleInstance），供后续桩池按 launchMode 分配 */
     val activityLaunchModes: Map<String, Int>,
+    /** 每个 Activity 的 screenOrientation（ActivityInfo 常量；-1=未声明），patch 时 setRequestedOrientation */
+    val activityOrientations: Map<String, Int>,
     val services: List<String>,
     val receivers: List<ReceiverInfo>,
     val providers: List<ProviderInfo>,
@@ -45,6 +47,7 @@ object ManifestParser {
         var appClass: String? = null
         val themes = mutableMapOf<String, Int>()
         val launchModes = mutableMapOf<String, Int>()
+        val orientations = mutableMapOf<String, Int>()
         val services = mutableListOf<String>()
         val receivers = mutableListOf<ReceiverInfo>()
         val providers = mutableListOf<ProviderInfo>()
@@ -70,6 +73,7 @@ object ManifestParser {
                             if (p.name == "activity") activities += curActivity
                             themes[curActivity] = p.getAttributeResourceValue(ANDROID_NS, "theme", 0)
                             launchModes[curActivity] = p.getAttributeIntValue(ANDROID_NS, "launchMode", 0)
+                            orientations[curActivity] = p.getAttributeIntValue(ANDROID_NS, "screenOrientation", -1)
                             isMain = false; isLauncher = false
                         }
                         "service" -> services += full(pkg, p.getAttributeValue(ANDROID_NS, "name"))
@@ -97,7 +101,7 @@ object ManifestParser {
                 ev = p.next()
             }
         }
-        return ApkManifest(pkg, label, activities, launcher, appClass, appTheme, themes, launchModes, services, receivers, providers)
+        return ApkManifest(pkg, label, activities, launcher, appClass, appTheme, themes, launchModes, orientations, services, receivers, providers)
     }
 
     private fun full(pkg: String, name: String?): String = when {
