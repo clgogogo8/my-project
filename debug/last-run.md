@@ -1,132 +1,111 @@
 # 测试结果
 
-- commit: 69e0f7e（Log Intent flags in rewriteIntent to diagnose WelcomeActivity launch loop）
+- commit: 767d19d（Add a stub Activity pool to break the SINGLE_TOP launch loop）
 - 编译: 成功（:app，BUILD SUCCESSFUL）
 - 设备: 小米 M2011K2C / Android 14
 - 被测 APK: 微信 8.0.78（手机上已装的单个 base.apk，280614450 字节，arm64-v8a，非 split）
-- 现象: 与上一轮一致：Application 创建成功、LauncherUI 起来了，随后 LauncherUI 反复 `startActivity(WelcomeActivity)`，被宿主重写成 StubActivity，
-  但 WelcomeActivity 从未被创建；屏幕只有 StubActivity 的**空白白屏**，没有任何微信界面。没有 FATAL EXCEPTION，进程存活。
-  这一轮采样（点击后约 +8 / +17 / +25 秒的三次）**没有看到 ANR 弹窗**（上一轮在第二次采样时就出现了）；MIUI 的 APP_SCOUT 记录了 3 次 `APP_SCOUT_WARNING/HANG`（20:20:05、20:20:24、20:20:27）。
-  **本轮拿到了系统侧证据：系统对每一次启动都返回 `result code=3`（START_DELIVERED_TO_TOP）——不是新建 Activity，而是把 Intent 送给了已在栈顶的 StubActivity。**
+- 现象: **重大进展：微信界面显示出来了。** 桩池修好了启动循环，WelcomeActivity 被真正创建，屏幕上出现了微信的**欢迎页**（见下面描述）。
+  不过点击后约 8 秒内系统弹出了"MultiOpen没有响应"（ANR）弹窗，盖住了页面下半部分；这个弹窗**是启动期主线程忙太久留下的**，后面主线程其实是空闲的（见栈）。
+  我点了系统 ANR 弹窗上的"等待"（不是"确定"，也没有点微信界面里的任何东西）后，弹窗消失，欢迎页完整可见。
+  没有 FATAL EXCEPTION，进程存活。**我没有点"登录"/"注册"/"语言"，没有输入任何内容，没有登录任何账号。**
 
-## 关键 logcat（只含 MultiOpen 标签 + 崩溃栈 + 系统 ActivityTaskManager 的 StubActivity 行）
+## 微信界面（我看到的，只描述）
 
-### 1. rewriteIntent 的 flags（本轮重点 1）
+- 全屏深蓝/黑色背景，中间是一张地球的大图，地球前面有一个小小的人物剪影站在地平线上（这就是微信的欢迎页）。
+- 右上角有白色文字按钮"语言"。
+- 底部左边是绿色实心按钮"登录"，底部右边是白色按钮"注册"。
+- 弹窗没有消除前（点"等待"之前），下半部分被"MultiOpen没有响应 / 等待 / 确定"盖住，只能看到图片和右上角"语言"；点"等待"之后，"登录"和"注册"两个按钮出现。
+- 我没有看到隐私政策弹窗或其他界面；焦点窗口是 `com.example.multiopen/.StubActivity2`。
 
-```
-20:20:31.398 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
-20:20:31.590 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
-20:20:31.894 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
-20:20:32.010 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
-20:20:32.159 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
-20:20:32.258 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
-   …（共 319 条，最后一条 20:20:53.541；所有 319 条的 flags 都是同一个值）
-```
+## 关键 logcat（只含 MultiOpen 标签 + 系统 ActivityTaskManager 里与 StubActivity 有关的行）
 
-**flags 值: 0x20000000（= `FLAG_ACTIVITY_SINGLE_TOP`），319 次全部相同，没有别的值。**
-（rewriteIntent 全部都是 WelcomeActivity，没有其他目标。）
-
-### 2. 系统 ActivityTaskManager 的决策（本轮重点 2）
-
-`ActivityTaskManager` 里和 `StubActivity` 有关的 `START` 行只有两种。第一种（1 条，启动 LauncherUI 那次，没有 flags）：
+### MultiOpen 行（30 条 provider installed、20 条 receiver registered 已折叠；没有 FATAL）
 
 ```
-20:20:22.079 I/ActivityTaskManager( 1985): START u0 {cmp=com.example.multiopen/.StubActivity (has extras)} with LAUNCH_MULTIPLE from uid 10251 from pid 12235 callingPackage com.example.multiopen (BAL_ALLOW_VISIBLE_WINDOW) result code=0
+20:35:35.739 I/MultiOpen: IActivityManager hooked
+20:35:35.756 I/MultiOpen: IPackageManager hooked
+20:35:45.665 I/MultiOpen: extracted 209 so (arm64-v8a) -> /data/user/0/com.example.multiopen/files/virtual/1790854541722/lib
+20:35:59.640 I/MultiOpen: resources built: cookie=15, apk=/data/user/0/com.example.multiopen/files/virtual/1790854541722/base.apk (280614450 bytes)
+20:35:59.640 I/MultiOpen: resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
+20:36:00.735 I/MultiOpen: resources built: ...（同上，第 2 次）
+20:36:00.735 I/MultiOpen: resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
+20:36:00.735 I/MultiOpen: fake process name -> com.tencent.mm
+20:36:01.654 I/MultiOpen: set mInitialApplication -> com.tencent.mm.app.Application
+20:36:04.244 I/MultiOpen: virtual Service created: com.tencent.mm.service.ProcessService$MMProcessService
+20:36:05.048 E/MultiOpen: plugin Application.onCreate failed
+20:36:05.048 E/MultiOpen: java.lang.IllegalStateException: java.lang.IllegalStateException: Scene Activity process mismatch: component=com.tencent.wxpay.internal.presentation.MainProcessPaySceneActivity declared=null current=com.tencent.mm
+20:36:05.049 I/MultiOpen: virtual Application created: com.tencent.mm.app.Application
+20:36:05.109 I/MultiOpen: newActivity: stub -> com.tencent.mm.ui.LauncherUI
+20:36:06.146 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
+20:36:06.386 I/MultiOpen: virtual Service created: com.tencent.mm.ipcinvoker.wx_extension.service.PushProcessIPCService
+20:36:06.495 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.WelcomeActivity -> stub (flags=0x20000000)
+20:36:06.821 I/MultiOpen: virtual Service created: androidx.work.impl.background.systemalarm.SystemAlarmService
+20:36:07.188 I/MultiOpen: newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity
 ```
 
-第二种（**319 条，与 rewriteIntent 的 319 条一一对应**，开头/结尾各一条）：
+### 系统 ActivityTaskManager（StubActivity 相关，本轮重点）
 
 ```
-20:20:31.401 I/ActivityTaskManager( 1985): START u0 {flg=0x20000000 cmp=com.example.multiopen/.StubActivity (has extras)} with LAUNCH_MULTIPLE from uid 10251 from pid 12235 callingPackage com.example.multiopen (BAL_ALLOW_VISIBLE_WINDOW) result code=3
-20:20:53.545 I/ActivityTaskManager( 1985): START u0 {flg=0x20000000 cmp=com.example.multiopen/.StubActivity (has extras)} with LAUNCH_MULTIPLE from uid 10251 from pid 12235 callingPackage com.example.multiopen (BAL_ALLOW_VISIBLE_WINDOW) result code=3
+20:35:59.654 I/ActivityTaskManager: START u0 {cmp=com.example.multiopen/.StubActivity (has extras)} ... result code=0          ← 启动 LauncherUI
+20:36:06.155 I/ActivityTaskManager: START u0 {flg=0x20000000 cmp=com.example.multiopen/.StubActivity1 (has extras)} ... result code=0   ← WelcomeActivity（第 1 次）
+20:36:06.504 I/ActivityTaskManager: START u0 {flg=0x20000000 cmp=com.example.multiopen/.StubActivity2 (has extras)} ... result code=0   ← WelcomeActivity（第 2 次）
+20:36:07.564 I/ActivityTaskManager: Displayed com.example.multiopen/.StubActivity2 for user 0: +7s917ms
 ```
 
-`result code` 的分布（只统计 StubActivity 的 START）：`code=0` 1 条，**`code=3` 319 条**。
-`3` = `ActivityManager.START_DELIVERED_TO_TOP`：目标 Activity 已经在任务栈顶，系统**没有创建新实例**，而是把新 Intent 通过 `onNewIntent` 投递给栈顶实例。
-本轮系统侧日志里**没有** `deliverNewIntent` / `Warning: Activity not started` / 复用任务的显式文字，只有 `result code=3`；
-其余 ActivityTaskManager 行都与此无关（MainActivity 的 `Displayed ... +373ms`、DocumentsUI 选择器的 START/Displayed、"The Process ... Already Exists in BG"）。
-另外 WindowManager 一共 6 条 W 级行，其中只有 1 条提到本应用：`onSyncReparent ... ActivityRecord{... com.example.multiopen/.StubActivity t-1}`；其余 5 条我没有逐条核对内容。
-
-### 3. 清单里 WelcomeActivity / LauncherUI 的 launchMode / taskAffinity（本轮重点 3，aapt2 34.0.0 `dump xmltree --file AndroidManifest.xml`）
-
+另外有 ActivityTaskManager 的 W 级行（没有时间戳，我没有对应到秒）：
 ```
-WelcomeActivity  (E: activity line=4272)
-    android:theme=@0x7f1202b2
-    android:name="com.tencent.mm.plugin.account.ui.WelcomeActivity"
-    android:screenOrientation=1
-    android:configChanges=0x000004a0
-  → launchMode: 未声明（= standard, 0）；taskAffinity: 未声明（= 默认，应用包名）
-
-LauncherUI  (E: activity line=541)
-    android:theme=@0x7f1202b2
-    android:label=@0x7f100fe8
-    android:name="com.tencent.mm.ui.LauncherUI"
-    android:exported=true
-    android:launchMode=1          ← singleTop
-    android:configChanges=0x00000da0
-    android:windowSoftInputMode=0x00000032
-  → launchMode: 1（singleTop）；taskAffinity: 未声明（= 默认）
+W/ActivityTaskManager: Activity top resumed state loss timeout for ActivityRecord{... com.example.multiopen/.MainActivity t80}
+W/ActivityTaskManager: Activity pause timeout for ActivityRecord{... com.example.multiopen/.MainActivity t80}
+W/ActivityTaskManager: Activity top resumed state loss timeout for ActivityRecord{... com.example.multiopen/.StubActivity t80}
+W/ActivityTaskManager: Activity pause timeout for ActivityRecord{... com.example.multiopen/.StubActivity t80}
+W/ActivityTaskManager: Launch timeout has expired, giving up wake lock!
 ```
 
-补充：整个清单里显式声明了 launchMode 的 activity 共 400 个：`=0`（standard）5 个、`=1`（singleTop）242 个、`=2`（singleTask）130 个、`=3`（singleInstance）23 个。
-有 taskAffinity 的 activity 很少（例如 `com.tencent.mm.notification`、`com.tencent.mm.finder`、`.AppBrandUI`），WelcomeActivity 和 LauncherUI 都没有。
-
-### 4. 其他 MultiOpen 行（折叠 provider ×30 / receiver ×20）
+### 看门狗主线程栈（3 条，state 都是 RUNNABLE，但 #2/#3 是空闲）
 
 ```
-20:19:56.541 I/MultiOpen: IActivityManager hooked
-20:19:56.545 I/MultiOpen: IPackageManager hooked
-20:20:06.646 I/MultiOpen: extracted 209 so (arm64-v8a) -> /data/user/0/com.example.multiopen/files/virtual/1790853602811/lib
-20:20:22.059 I/MultiOpen: resources built: cookie=15, apk=/data/user/0/com.example.multiopen/files/virtual/1790853602811/base.apk (280614450 bytes)
-20:20:22.059 I/MultiOpen: resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
-20:20:23.234 I/MultiOpen: resources built: ...（同上，第 2 次）
-20:20:23.234 I/MultiOpen: resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
-20:20:23.234 I/MultiOpen: fake process name -> com.tencent.mm
-20:20:24.158 I/MultiOpen: set mInitialApplication -> com.tencent.mm.app.Application
-20:20:30.070 I/MultiOpen: virtual Service created: com.tencent.mm.service.ProcessService$MMProcessService
-20:20:30.942 E/MultiOpen: plugin Application.onCreate failed
-20:20:30.942 E/MultiOpen: java.lang.IllegalStateException: java.lang.IllegalStateException: Scene Activity process mismatch: component=com.tencent.wxpay.internal.presentation.MainProcessPaySceneActivity declared=null current=com.tencent.mm
-20:20:30.943 I/MultiOpen: virtual Application created: com.tencent.mm.app.Application
-20:20:31.000 I/MultiOpen: newActivity: stub -> com.tencent.mm.ui.LauncherUI
-20:20:31.470 I/MultiOpen: virtual Service created: com.tencent.mm.ipcinvoker.wx_extension.service.PushProcessIPCService
-20:20:31.771 I/MultiOpen: virtual Service created: androidx.work.impl.background.systemalarm.SystemAlarmService
+20:36:07.814 main-thread stack #1 (state=RUNNABLE):
+    at android.view.DisplayEventReceiver.nativeGetLatestVsyncEventData(Native Method)
+    at android.view.DisplayEventReceiver.getLatestVsyncEventData(DisplayEventReceiver.java:348)
+    at android.view.Choreographer$FrameData.update(Choreographer.java:1447)
+    at android.view.Choreographer.doFrame(Choreographer.java:956)
+    at android.view.Choreographer$FrameDisplayEventReceiver.run(Choreographer.java:1617)
+    at android.os.Handler.handleCallback ← Looper.loopOnce ← Looper.loop ← ActivityThread.main …   （在画一帧）
+
+20:36:13.815 main-thread stack #2 (state=RUNNABLE):
+    at android.os.MessageQueue.nativePollOnce(Native Method)
+    at android.os.MessageQueue.next(MessageQueue.java:344)
+    at android.os.Looper.loopOnce(Looper.java:176)
+    at android.os.Looper.loop(Looper.java:314)
+    at android.app.ActivityThread.main(ActivityThread.java:8857) …   （主线程空闲，在等消息）
+
+20:36:19.837 main-thread stack #3 (state=RUNNABLE):   ← 与 #2 相同（nativePollOnce，空闲）
 ```
 
-（`Scene Activity process mismatch ... declared=null` 与上一轮完全相同：被宿主捕获，没有崩溃。）
+bg 线程（20:36:13.8 采样，共 26 个）：全部是 WAITING / TIMED_WAITING 的空闲线程（`[GT]HotPool#0~7`、`wc_srvinit_0~5`、`matrix_x_0~2`、`MMCrashANRThread-0/1`、`IPCThreadPool#Thread-0/1`、
+`pool-4-thread-1`、`Recovery.LogWriter`、`Zidl Java DestructorThread`、`Thread-11`、`[GT]HCPerfManager`）。**没有 BLOCKED，没有 RUNNABLE，没有任何线程在等锁。**
 
-整个期间只有 **1 次** `newActivity: stub`（LauncherUI），WelcomeActivity 一次都没被创建。
+## 本轮云端 Claude 要求的重点
 
-看门狗主线程栈（3 条）:
-- #1（20:20:30.159，state=WAITING）：还在 Application.onCreate 里，栈顶 `ForkJoinTask.get ← ph5.n0.l ← ph5.n0.a ← gp0.q1.call …`（死锁修复后这一段能正常走完）。
-- #2（20:20:36.160，state=RUNNABLE）：`com.tencent.mm.plugin.lite.logic.u0.getQualifierAttribute ← qs.g.e ← qs.g.d ← qs.b.a ← qs.f.hasNext ← com.tencent.mm.sdk.event.d.d ← IEvent.e`（在微信事件分发里）。
-- #3（20:20:42.173，state=RUNNABLE）：`BinderProxy.transactNative ← … IActivityClientController$Stub$Proxy.overridePendingTransition ← Activity.overridePendingTransition ← kj5.f.h(:12)`。
-主线程在 #2、#3 里都不是被锁住，是在忙（RUNNABLE），与上一轮的"主线程在 LauncherUI.onResume → D7 → startActivity 里循环"一致。
-
-## 本地 AI 的分析（未改源码，未验证修复）
-
-- 系统侧已经确认了机制：**不是系统拒绝启动，而是 `START_DELIVERED_TO_TOP`（`result code=3`）**。
-  原因链（有日志/清单证据）:
-  1. 宿主把 `WelcomeActivity` 重写成同一个 `com.example.multiopen/.StubActivity`（所有虚拟 Activity 共用一个桩）。
-  2. 此时栈顶就是 StubActivity（承载 LauncherUI 的那个实例）。
-  3. 微信发起的 Intent 带 `FLAG_ACTIVITY_SINGLE_TOP`（`flags=0x20000000`，319 次全是它）。
-  4. 系统看到"目标 StubActivity == 栈顶且带 SINGLE_TOP"，不创建新实例，直接 `onNewIntent` 投递给栈顶的 StubActivity，返回 3。
-  5. 所以宿主的 `newActivity` 不会再被调用，WelcomeActivity 永远不会被创建；LauncherUI 的循环等不到它出现，就一直重试。
-- 说明：这里是**单桩**造成的——所有目标都映射到同一个桩，系统无法区分。WelcomeActivity 本身是 standard（launchMode 未声明），LauncherUI 是 singleTop(1)，
-  这两条清单信息说明问题**不是来自微信清单里的 launchMode**，而是来自**微信发出的 Intent 自带的 SINGLE_TOP flag + 栈顶恰好是同一个桩**。
-- 可能的修法思路（供云端决定，我没有试）:
-  - 做"桩池"：准备多个 StubActivity 子类（Stub1、Stub2 …），每个被打开的虚拟 Activity 占一个，重写目标时选一个当前未占用的桩；这样栈顶与目标不同，系统会创建新实例。
-  - 或者在重写 Intent 时清掉 `FLAG_ACTIVITY_SINGLE_TOP`（0x20000000）。这只能避免"投递到栈顶"，但仍然是单桩，系统要创建同一个桩的第二个实例，
-    具体行为（standard 桩会新建实例）我没有验证。
-  - 如果桩要对应微信里 launchMode 为 singleTask/singleInstance 的 Activity（清单里有 130 个 singleTask、23 个 singleInstance），也需要桩池里有对应 launchMode 的桩。
+- **循环有没有停: 停了。** `rewriteIntent: ... WelcomeActivity -> stub` 只有 **2 次**（上一轮 319 次、再上一轮 735 次）。
+- **WelcomeActivity 有没有被真正创建: 是。** `newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity`（20:36:07.188）出现了。
+- **ActivityTaskManager 的 result code: 全部是 0**。StubActivity 相关的 3 条 START 全是 `result code=0`（新建）；`code=3` 为 0 条。
+  这两次 WelcomeActivity 的启动分别分配到了 `StubActivity1`、`StubActivity2`（轮换分配，目标桩 ≠ 栈顶桩），符合预期。
+- **微信有没有显示出界面: 有，欢迎页**（描述见上；登录/注册按钮可见，没有进一步操作）。
+- 新崩溃/新卡点: 没有新崩溃（FATAL 0）。唯一的新现象是**启动期 ANR 弹窗**：
+  - 点击后第一次采样（约 +8 秒）弹窗就已经在了，对应 `Displayed ...StubActivity2: +7s917ms` 和 ActivityTaskManager 的 `resumed state loss timeout` / `pause timeout` / `Launch timeout` 警告：
+    启动期间主线程长时间忙，系统等不到它响应生命周期事务，就弹了 ANR。
+  - 到 +14 秒、+20 秒的看门狗采样时主线程是空闲的（`nativePollOnce`），说明启动完成后主线程没有卡。
+  - 点系统弹窗的"等待"后，弹窗没有再出现（点完 4 秒后的窗口列表里只有 `StubActivity2`，没有 Application Not Responding）。
+- 本地 AI 的观察（未验证）: 启动期主线程忙了约 8 秒（Application.onCreate 里的微信初始化，从 `set mInitialApplication` 20:36:01.654 到 `virtual Application created` 20:36:05.049，再到 LauncherUI/WelcomeActivity 的创建和首帧）。
+  如果要消除 ANR 弹窗，需要缩短主线程上的启动耗时（或让不必要的初始化异步），这是后面的优化项，不影响"能显示出界面"这个结论。
 
 ## 异常计数
 FATAL EXCEPTION: 0 次
-plugin Application.onCreate failed: 1 次（被捕获：Scene Activity process mismatch，与上一轮相同）
-rewriteIntent(WelcomeActivity -> stub): 319 次，flags 全部是 0x20000000
-ActivityTaskManager START StubActivity: result code=3 共 319 次，result code=0 共 1 次
-virtual Application created: 1 次
-newActivity: stub: 1 次（LauncherUI）
-main-thread stack: 3 条（#1 WAITING，#2/#3 RUNNABLE）
+plugin Application.onCreate failed: 1 次（被捕获：Scene Activity process mismatch，与前两轮相同）
+rewriteIntent(WelcomeActivity -> stub): 2 次（flags=0x20000000）
+newActivity: stub: 2 次（LauncherUI、WelcomeActivity）
+ActivityTaskManager START StubActivity*: 3 次，result code=0 共 3 次，result code=3 共 0 次
 mCoreAccount not initialized: 0 次
 Resources$NotFoundException: 0 次
 ACCESS_NETWORK_STATE: 0 次
@@ -136,4 +115,4 @@ UnsatisfiedLinkError: 0 次
 ClassNotFoundException: 0 次
 SecurityException: 0 次
 NoClassDefFoundError: 0 次
-ANR 弹窗: 本轮采样里没有看到（上一轮有）
+ANR 弹窗: 有（约 +8 秒出现；点系统弹窗上的"等待"后消失）
