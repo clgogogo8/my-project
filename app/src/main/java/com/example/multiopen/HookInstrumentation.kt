@@ -62,7 +62,7 @@ open class HookInstrumentation(protected val ctx: Context, protected val base: I
             val cls = if (comp.className.startsWith(".")) rt.app.packageName + comp.className else comp.className
             val isPluginActivity = try { Activity::class.java.isAssignableFrom(rt.classLoader.loadClass(cls)) } catch (_: Throwable) { false }
             if (!isPluginActivity) return intent
-            Log.i(TAG, "rewriteIntent: $cls -> stub")
+            Log.i(TAG, "rewriteIntent: $cls -> stub (flags=0x${Integer.toHexString(intent.flags)})")
             Intent(intent)
                 .setComponent(ComponentName(ctx.packageName, StubActivity::class.java.name))
                 .putExtra(StubActivity.EXTRA_INSTANCE, instance)
