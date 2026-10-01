@@ -35,18 +35,7 @@ class VirtualContext(
 
     /** 用插件 APK 自身的 ApplicationInfo，并把 so/数据/APK 路径改到本实例目录 */
     private val appInfo: ApplicationInfo by lazy {
-        val app = runtime?.app
-        val info = app?.let {
-            super.getPackageManager().getPackageArchiveInfo(it.apkFile.absolutePath, 0)?.applicationInfo
-        } ?: super.getApplicationInfo()
-        if (app != null) {
-            info.packageName = app.packageName
-            info.sourceDir = app.apkFile.absolutePath
-            info.publicSourceDir = app.apkFile.absolutePath
-            info.dataDir = root.absolutePath
-            info.nativeLibraryDir = app.nativeLibDir.absolutePath
-        }
-        info
+        runtime?.app?.let { VirtualAppInfo.applicationInfo(baseContext, it) } ?: super.getApplicationInfo()
     }
     override fun getApplicationInfo(): ApplicationInfo = appInfo
     override fun getPackageCodePath(): String = runtime?.app?.apkFile?.absolutePath ?: super.getPackageCodePath()

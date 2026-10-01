@@ -4,6 +4,12 @@ import android.content.res.AssetManager
 import org.xmlpull.v1.XmlPullParser
 import java.io.File
 
+/** 静态广播：类名 + 它声明的 action（动态注册时要用） */
+data class ReceiverInfo(val name: String, val actions: List<String>)
+
+/** ContentProvider：类名 + authorities（可有多个，manifest 里用 ; 分隔） */
+data class ProviderInfo(val name: String, val authorities: List<String>)
+
 data class ApkManifest(
     val packageName: String,
     val label: String?,
@@ -14,6 +20,9 @@ data class ApkManifest(
     val applicationClass: String?,
     val appTheme: Int,
     val activityThemes: Map<String, Int>,
+    val services: List<String>,
+    val receivers: List<ReceiverInfo>,
+    val providers: List<ProviderInfo>,
 )
 
 /** 解析 APK 里的二进制 AndroidManifest.xml（不依赖系统安装） */
@@ -33,11 +42,16 @@ object ManifestParser {
         var appTheme = 0
         var appClass: String? = null
         val themes = mutableMapOf<String, Int>()
+        val services = mutableListOf<String>()
+        val receivers = mutableListOf<ReceiverInfo>()
+        val providers = mutableListOf<ProviderInfo>()
 
         am.openXmlResourceParser(cookie, "AndroidManifest.xml").use { p ->
             var curActivity: String? = null
             var isMain = false
             var isLauncher = false
+            var curReceiver: String? = null
+            val curReceiverActions = mutableListOf<String>()
             var ev = p.eventType
             while (ev != XmlPullParser.END_DOCUMENT) {
                 if (ev == XmlPullParser.START_TAG) {
@@ -54,18 +68,32 @@ object ManifestParser {
                             themes[curActivity] = p.getAttributeResourceValue(ANDROID_NS, "theme", 0)
                             isMain = false; isLauncher = false
                         }
-                        "action" -> if (p.getAttributeValue(ANDROID_NS, "name") == "android.intent.action.MAIN") isMain = true
+                        "service" -> services += full(pkg, p.getAttributeValue(ANDROID_NS, "name"))
+                        "receiver" -> { curReceiver = full(pkg, p.getAttributeValue(ANDROID_NS, "name")); curReceiverActions.clear() }
+                        "provider" -> providers += ProviderInfo(
+                            full(pkg, p.getAttributeValue(ANDROID_NS, "name")),
+                            p.getAttributeValue(ANDROID_NS, "authorities").orEmpty().split(";").filter { it.isNotEmpty() },
+                        )
+                        "action" -> {
+                            val an = p.getAttributeValue(ANDROID_NS, "name")
+                            if (an == "android.intent.action.MAIN") isMain = true
+                            if (curReceiver != null && an != null) curReceiverActions += an
+                        }
                         "category" -> if (p.getAttributeValue(ANDROID_NS, "name") == "android.intent.category.LAUNCHER") isLauncher = true
                     }
                 } else if (ev == XmlPullParser.END_TAG) {
                     if (p.name == "intent-filter" && isMain && isLauncher && launcher == null) launcher = curActivity
                     if (p.name == "intent-filter") { isMain = false; isLauncher = false }
                     if (p.name == "activity" || p.name == "activity-alias") curActivity = null
+                    if (p.name == "receiver") {
+                        curReceiver?.let { receivers += ReceiverInfo(it, curReceiverActions.toList()) }
+                        curReceiver = null; curReceiverActions.clear()
+                    }
                 }
                 ev = p.next()
             }
         }
-        return ApkManifest(pkg, label, activities, launcher, appClass, appTheme, themes)
+        return ApkManifest(pkg, label, activities, launcher, appClass, appTheme, themes, services, receivers, providers)
     }
 
     private fun full(pkg: String, name: String?): String = when {

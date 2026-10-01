@@ -21,7 +21,10 @@ class MultiOpenApp : Application() {
         try {
             VirtualCore.list(this) // 预热：把已安装的虚拟包名加载进 knownPackages
             ActivityManagerHook.install(packageName) { it in VirtualCore.knownPackages }
-        } catch (t: Throwable) { Log.e(TAG, "AM hook install failed", t) }
+            PackageManagerHook.install(this,
+                isVirtual = { it in VirtualCore.knownPackages },
+                resolve = { pkg -> VirtualCore.list(this).firstOrNull { it.packageName == pkg } })
+        } catch (t: Throwable) { Log.e(TAG, "hook install failed", t) }
     }
 
     companion object { const val TAG = "MultiOpen" }

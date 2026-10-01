@@ -25,7 +25,7 @@ gradle wrapper
      - [x] native so：按设备 ABI 从 APK 解出 `lib/<abi>/*.so`（`NativeLibs`），作为 `DexClassLoader` 的 librarySearchPath
      - [x] `getApplicationInfo()` 伪装：包名 / dataDir / nativeLibraryDir / sourceDir 指向本实例（`VirtualContext`）
      - [x] `getPackageName()` 伪装 + `IActivityManager` 代理 hook（`ActivityManagerHook`）：应用读插件包名，binder 层把误入 AMS 的虚拟包名归一回宿主包名
-     - [ ] `PackageManager` 代理 hook：用插件包名查 PMS 仍会 NameNotFound（需把对虚拟包的查询重定向到解析出的 PackageInfo）
+     - [x] `PackageManager` 代理 hook（`PackageManagerHook`）：拦截对虚拟包的 getPackageInfo / getApplicationInfo，用 `VirtualAppInfo` 现解 APK 构造结果
      - [ ] 外部存储重定向
 4. [ ] Service / Broadcast / ContentProvider / 通知
 5. [ ] Native 层路径重定向与设备信息伪装
@@ -36,6 +36,6 @@ gradle wrapper
 - [x] native 库解压与加载（否则 `System.loadLibrary("wechatxxx")` 直接崩）
 - [x] `ApplicationInfo` 路径伪装（微信大量读自身 dataDir / nativeLibraryDir）
 - [x] `IActivityManager` 代理 hook + `getPackageName` 伪装（微信几乎处处校验自身包名）
-- [ ] `PackageManager` 代理 hook：微信会用自身包名查 `getPackageInfo` / `getApplicationInfo`，现在会 NameNotFound
-- [ ] Service / BroadcastReceiver / ContentProvider（FileProvider 分享、推送、后台保活）
+- [x] `PackageManager` 代理 hook：微信用自身包名查 `getPackageInfo` / `getApplicationInfo` 不再 NameNotFound
+- [~] Service / BroadcastReceiver / ContentProvider（FileProvider 分享、推送、后台保活）
 - [ ] 多桩池（不同 launchMode / 竖屏锁定 / 透明主题）
