@@ -36,14 +36,7 @@ object PackageManagerHook {
 
             val ipm = original.javaClass.interfaces.firstOrNull { it.name == "android.content.pm.IPackageManager" }
                 ?: Class.forName("android.content.pm.IPackageManager")
-            val handler = InvocationHandler { _, method, args ->
-                val box = runCatching { handle(host, isVirtual, resolve, method.name, args) }
-                    .onFailure { Log.w(MultiOpenApp.TAG, "PM hook ${method.name} 构造失败，透传", it) }.getOrNull()
-                if (box != null) box.value
-                else try { method.invoke(original, *(args ?: emptyArray())) }
-                catch (e: InvocationTargetException) { throw e.cause ?: e }
-            }
-            val proxy = Proxy.newProxyInstance(ipm.classLoader, arrayOf(ipm), handler)
+            val proxy = makeProxy(host, isVirtual, resolve, original, ipm)
             field.set(null, proxy)
             // 已创建的 ApplicationPackageManager 内部还缓存着原代理，一并换掉
             runCatching {
@@ -55,6 +48,24 @@ object PackageManagerHook {
         } catch (t: Throwable) {
             Log.e(MultiOpenApp.TAG, "PackageManagerHook 安装失败", t)
         }
+    }
+
+    /**
+     * 创建一个 IPackageManager 动态代理：命中虚拟包的查询用本地结果，其余透传给 [original]。
+     * ServiceManagerHook 也复用它，以覆盖微信自己从 ServiceManager 另拿 binder、绕过 sPackageManager 的情况。
+     */
+    fun makeProxy(
+        host: Context, isVirtual: (String) -> Boolean, resolve: (String) -> VirtualApp?,
+        original: Any, ipm: Class<*>,
+    ): Any {
+        val handler = InvocationHandler { _, method, args ->
+            val box = runCatching { handle(host, isVirtual, resolve, method.name, args) }
+                .onFailure { Log.w(MultiOpenApp.TAG, "PM hook ${method.name} 构造失败，透传", it) }.getOrNull()
+            if (box != null) box.value
+            else try { method.invoke(original, *(args ?: emptyArray())) }
+            catch (e: InvocationTargetException) { throw e.cause ?: e }
+        }
+        return Proxy.newProxyInstance(ipm.classLoader, arrayOf(ipm), handler)
     }
 
     /** 命中虚拟包且构造成功 → Box(结果)；否则 null → 透传。 */

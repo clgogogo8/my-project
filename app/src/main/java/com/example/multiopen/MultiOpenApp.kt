@@ -21,9 +21,11 @@ class MultiOpenApp : Application() {
         try {
             VirtualCore.list(this) // 预热：把已安装的虚拟包名加载进 knownPackages
             ActivityManagerHook.install(packageName) { it in VirtualCore.knownPackages }
-            PackageManagerHook.install(this,
-                isVirtual = { it in VirtualCore.knownPackages },
-                resolve = { pkg -> VirtualCore.list(this).firstOrNull { it.packageName == pkg } })
+            val isVirtual: (String) -> Boolean = { it in VirtualCore.knownPackages }
+            val resolve: (String) -> VirtualApp? = { pkg -> VirtualCore.list(this).firstOrNull { it.packageName == pkg } }
+            PackageManagerHook.install(this, isVirtual, resolve)
+            // 更底层地包装 ServiceManager 的 package binder，覆盖微信自己从 ServiceManager 另拿 binder 的路径
+            ServiceManagerHook.install(this, isVirtual, resolve)
         } catch (t: Throwable) { Log.e(TAG, "hook install failed", t) }
     }
 
