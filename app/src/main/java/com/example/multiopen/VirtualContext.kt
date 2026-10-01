@@ -68,6 +68,18 @@ class VirtualContext(
     override fun getCacheDir(): File = dir("cache")
     override fun getCodeCacheDir(): File = dir("code_cache")
     override fun getNoBackupFilesDir(): File = dir("no_backup")
+
+    // 外部存储（app 私有，原本在 /sdcard/Android/data/<pkg>/…）重定向到实例目录，隔离多开数据。
+    // 注意：公共外部路径（Environment.getExternalStorageDirectory、/sdcard/tencent 等）是静态 API，
+    // 这里拦不到，需后续在别处处理。
+    override fun getExternalFilesDir(type: String?): File =
+        if (type.isNullOrEmpty()) dir("ext_files") else dir("ext_files/$type")
+    override fun getExternalFilesDirs(type: String?): Array<File> = arrayOf(getExternalFilesDir(type))
+    override fun getExternalCacheDir(): File = dir("ext_cache")
+    override fun getExternalCacheDirs(): Array<File> = arrayOf(getExternalCacheDir())
+    override fun getExternalMediaDirs(): Array<File> = arrayOf(dir("ext_media"))
+    override fun getObbDir(): File = dir("obb")
+    override fun getObbDirs(): Array<File> = arrayOf(getObbDir())
     override fun getFileStreamPath(name: String): File = File(filesDir, name)
     override fun fileList(): Array<String> = filesDir.list() ?: emptyArray()
     override fun deleteFile(name: String): Boolean = getFileStreamPath(name).delete()

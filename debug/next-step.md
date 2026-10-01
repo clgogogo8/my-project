@@ -5,27 +5,28 @@
 
 ---
 
-## 目标 commit：见最新（桩池 Stub pool）
+## 目标 commit：见最新（外部存储重定向 + Manifest 收集 launchMode）
 
-## 改了什么（实质修复）
-- 系统侧确认：启动循环是 SINGLE_TOP + 单桩 → `START_DELIVERED_TO_TOP`（result code=3），目标桩==栈顶桩，不新建。
-- 本轮：把单个 StubActivity 改成 8 个桩的池（StubActivity + StubActivity1..7，已在 manifest 声明），
-  启动虚拟 Activity 时 round-robin 轮换分配桩，使“目标桩 ≠ 栈顶桩”，系统就会新建实例、触发 newActivity。
+## 改了什么
+- 上一轮微信欢迎页已显示。本轮补“没做的”里最安全的一项：
+  - VirtualContext 重定向 app 私有外部存储（getExternalFilesDir/CacheDir/MediaDirs/ObbDir）到实例目录。
+  - ManifestParser 顺带收集每个 Activity 的 launchMode（纯数据，为下一轮桩池进阶铺垫，不改行为）。
+- **本轮的首要目的是回归验证：确认这些改动没有把已经跑通的微信欢迎页弄坏。**
 
 ## 步骤
 1. 编译 `:app`，装宿主，`pm clear com.example.multiopen` 清数据。
-2. 重新添加微信 APK，打开，观察约 20~30 秒。
-3. 抓 logcat：`adb logcat MultiOpen:I ActivityTaskManager:I AndroidRuntime:E *:S`
+2. 重新添加微信 APK，打开，等到欢迎页出来（出现系统 ANR 弹窗就点“等待”）。
+3. **额外做一次冷启动验证**：欢迎页出来后，退出微信实例（回到 MultiOpen 列表或按返回），
+   **不要 pm clear**，再从 MultiOpen 第二次点开这个微信实例，计时到欢迎页出现。
+4. 抓 logcat：`adb logcat MultiOpen:I ActivityTaskManager:I AndroidRuntime:E *:S`
 
-## 本轮重点看（最关键）
-- **循环有没有停**：`rewriteIntent: ...WelcomeActivity -> stub` 还是不是几百次？理想情况是只有几次。
-- **WelcomeActivity 有没有被真正创建**：是否出现 `newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity`
-  （上几轮只有 LauncherUI 一个 newActivity）。
-- **ActivityTaskManager 的 result code**：启动 StubActivity 的行，code 还是不是一直 3？理想是 0（新建）。
-- **微信有没有显示出界面**：闪屏/欢迎页/登录（手机号登录 or 扫码登录）/隐私弹窗 —— 有就详细描述、能截图最好。
-- 若换了新崩溃或新的卡点，把第一个 `FATAL`/`Caused by:` 或新的主线程栈贴回。
+## 本轮重点看
+1. **回归**：微信欢迎页是否还能正常显示（登录/注册/语言按钮都在）？有没有新的 FATAL / 新崩溃？
+2. **第二次打开（不清数据）**：启动到欢迎页花多久？`Displayed ... +?ms`。还弹不弹 ANR？
+   （用来判断上轮那个 ~8s ANR 是不是只有首次冷启动才有。）
+3. 外部存储：有没有和存储相关的新报错（权限、路径 not found 之类）。
 
 ## 写回 debug/last-run.md（覆盖），然后
 ```
-git add debug/last-run.md && git commit -m "test run: 桩池" && git push
+git add debug/last-run.md && git commit -m "test run: 外部存储+launchMode；回归与二次启动" && git push
 ```
