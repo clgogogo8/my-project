@@ -10,7 +10,7 @@
    git fetch origin && git reset --hard origin/claude/inspiring-bell-ivlw5w
    ```
    记下当前 commit 号（`git rev-parse --short HEAD`）。
-2. **编译 + 装宿主 + 清数据 + 真机复现**：按 `docs/REAL_DEVICE_TEST.md`。
+2. **读 `debug/next-step.md`**：云端 Claude 每轮在那里写明本轮要测什么、重点看什么。按它做（编译 + 装宿主 + 清数据 + 真机复现，细节见 `docs/REAL_DEVICE_TEST.md`）。
 3. **把结果写进 `debug/last-run.md`**（覆盖整个文件，用下面的模板），然后：
    ```
    git add debug/last-run.md && git commit -m "test run: <commit号> <一句话结果>" && git push
