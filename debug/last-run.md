@@ -1,108 +1,116 @@
 # 测试结果
 
-- commit: 83bd5fc（launchMode-aware stub pool (singleTask/singleInstance stubs)；含 2198c40 外部存储重定向）
-- 编译: 成功（:app，BUILD SUCCESSFUL）
-- 设备: 小米 M2011K2C / Android 14（**手机上同时装着真正的微信 com.tencent.mm，uid 10260**；被测的是它的 APK 副本放进多开容器）
-- 被测 APK: 微信 8.0.78（手机上已装的单个 base.apk，280614450 字节，arm64-v8a，非 split）
-- 现象:
-  1. **回归通过**：欢迎页仍然正常显示（深蓝地球图 + 右上"语言" + 底部绿色"登录"、白色"注册"）；没有 FATAL；启动期 ANR 弹窗和上一轮一样出现，我点系统弹窗上的"等待"后消失。
-  2. **点"登录"（只点了这一下，没有输入任何内容，没有登录）→ 新的崩溃**：登录页 `MobileInputUI` 被创建、系统记录 `Displayed ...StubActivity3 +569ms`，
-     约 **0.46 秒后宿主进程被 SIGSEGV 杀死**（`Process 25414 exited due to signal 11 (Segmentation fault)`）；系统随后重启进程，回到欢迎页。
-     **AndroidRuntime 里没有 FATAL EXCEPTION**（native 崩溃，不是 Java 异常）。
-     我的截图是点击后 3 秒才截的，那时已经是重启后的欢迎页，所以**我没有亲眼看到登录页的画面**，只有系统日志证明它被创建并显示过。
+- commit: 4ca0148（Fix login-page SIGSEGV: make com.tencent.mm visible, stub getInstallerPackageName）
+- 编译: 成功（:app，BUILD SUCCESSFUL；唯一警告 PackageManagerHook.kt:88 `getInstallerPackageName(String)` is deprecated）
+- 设备: 小米 M2011K2C / Android 14。**这一轮手机上已经卸载了真实微信**（`pm path com.tencent.mm` 为空）；微信 8.0.78 的 APK 是电脑上备份的副本，推到 /sdcard/Download 再放进多开容器。
+- 被测 APK: 微信 8.0.78（单个 base.apk，280614450 字节，arm64-v8a，非 split）
+- 现象: 欢迎页正常（这一轮没出现 ANR 弹窗）。**点"登录"后仍然崩溃**：`MobileInputUI` 被创建并显示（`Displayed ...StubActivity3 +538ms`），约 0.37 秒后进程死亡，系统重启进程回到欢迎页。
+  死因这次**拿到了 native 信息**（见下）：真正的崩溃是 **SIGTRAP（断点陷阱），发生在 `libcronet.119.0.6045.214.so`**，由微信自己的 NativeCrash 处理器在转储时又崩了一次，系统记录的最终退出信号是 11。
+  登录页还是没能稳定停住，我没有机会看到它的画面（截图是点击后约 2 秒才截的，已是重启后的欢迎页）。我只点了"登录"一下，没有输入任何内容。
 
-## 关键 logcat（MultiOpen + 系统对本进程的行；全部是这一次点击"登录"前后的）
+## 关键 logcat（MultiOpen + 系统）
 
-### 点击"登录"的时间线（PID 25414，设备时钟）
+### 点击"登录"的时间线（PID 27755）
 
 ```
-21:04:58.974 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.MobileInputUI -> stub (flags=0x0)
-21:04:58.984 I/ActivityTaskManager: START u0 {cmp=com.example.multiopen/.StubActivity3 (has extras)} ... result code=0
-21:04:59.019 I/MultiOpen: newActivity: stub -> com.tencent.mm.plugin.account.ui.MobileInputUI
-21:04:59.353 I/MultiOpen: virtual Service created: com.tencent.mm.service.ProcessService$SupportProcessService
-21:04:59.355 I/wm_on_create_called: ...StubActivity3,performCreate
-21:04:59.395 I/wm_on_resume_called: ...StubActivity3,RESUME_ACTIVITY
-21:04:59.555 I/ActivityTaskManager: Displayed com.example.multiopen/.StubActivity3 for user 0: +569ms
-21:04:59.601 I/chromium: [...mm_cronet_network_change_notify.cc(59)] remain size: 1
-21:04:59.603 I/AppsFilter: interaction: PackageSetting{... com.example.multiopen/10251} -> PackageSetting{... com.tencent.mm/10260} BLOCKED
-21:04:59.614 W/System.err: java.lang.ExceptionInInitializerError
-21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo.getInstance(Unknown Source:10)
-21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo.getAll(Unknown Source:0)
-21:04:59.614 W/System.err: Caused by: java.lang.IllegalArgumentException: Unknown package: com.tencent.mm
-21:04:59.614 W/System.err:     at android.content.pm.IPackageManager$Stub$Proxy.getInstallerPackageName(IPackageManager.java:5422)
-21:04:59.614 W/System.err:     at java.lang.reflect.Method.invoke(Native Method)
-21:04:59.614 W/System.err:     at ig5.n1.invoke(Unknown Source:202)            ← 一个 IPackageManager 的动态代理（`ig5.n1` 是混淆后的类名，看起来是微信自己的类，不是宿主 `com.example.multiopen` 包下的类；我没有进一步确认）
-21:04:59.614 W/System.err:     at java.lang.reflect.Proxy.invoke(Proxy.java:1006)
-21:04:59.614 W/System.err:     at $Proxy11.getInstallerPackageName(Unknown Source)
-21:04:59.614 W/System.err:     at android.app.ApplicationPackageManager.getInstallerPackageName(ApplicationPackageManager.java:2582)
-21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo.<init>(SourceFile:45)
-21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo.<init>(SourceFile:1)
-21:04:59.614 W/System.err:     at org.chromium.base.BuildInfo$Holder.<clinit>(Unknown Source:3)
-21:04:59.614 W/System.err: Caused by: android.os.RemoteException: Remote stack trace:
-21:04:59.614 W/System.err:     at com.android.server.pm.ComputerEngine.getInstallerPackageName(ComputerEngine.java:5069) ...
-21:04:59.757 V/NativeCrash(29303): Dump Java in cloned process
-21:04:59.785 E/NativeCrash(25414): Dumper process exited with status -11
-21:04:59.785 V/NativeCrash(25414): Call crash dump callback.
-21:05:00.019 I/ActivityManager: Process com.example.multiopen (pid 25414) has died: fg  TOP
-21:05:00.020 I/am_proc_died: [0,25414,com.example.multiopen,0,2]
-21:05:00.021 I/Zygote: Process 25414 exited due to signal 11 (Segmentation fault)
-21:05:00.035 W/ActivityTaskManager: Force removing ActivityRecord{... com.example.multiopen/.StubActivity3 t86}: app died, no saved state
-21:05:00.053 I/ActivityManager: Start proc 26515:com.example.multiopen/u0a251 for top-activity {com.example.multiopen/com.example.multiopen.StubActivity2} caller=com.example.multiopen
+21:13:13.066 I/MultiOpen: rewriteIntent: com.tencent.mm.plugin.account.ui.MobileInputUI -> stub (flags=0x0)
+21:13:13.077 I/ActivityTaskManager: START u0 {cmp=com.example.multiopen/.StubActivity3 (has extras)} ... result code=0
+21:13:13.112 I/MultiOpen: newActivity: stub -> com.tencent.mm.plugin.account.ui.MobileInputUI
+21:13:13.469 I/MultiOpen: virtual Service created: com.tencent.mm.service.ProcessService$SupportProcessService
+21:13:13.612 I/ActivityTaskManager: Displayed com.example.multiopen/.StubActivity3 for user 0: +538ms
+21:13:13.681 W/System.err: java.lang.ExceptionInInitializerError            ← 与上一轮同一个异常
+21:13:13.681 W/System.err:   at org.chromium.base.BuildInfo.getInstance(Unknown Source:10)
+21:13:13.681 W/System.err:   at org.chromium.base.BuildInfo.getAll(Unknown Source:0)
+21:13:13.681 W/System.err: Caused by: java.lang.IllegalArgumentException: Unknown package: com.tencent.mm
+21:13:13.681 W/System.err:   at android.content.pm.IPackageManager$Stub$Proxy.getInstallerPackageName(IPackageManager.java:5422)
+21:13:13.681 W/System.err:   at java.lang.reflect.Method.invoke(Native Method)
+21:13:13.681 W/System.err:   at ig5.n1.invoke(Unknown Source:202)
+21:13:13.681 W/System.err:   at java.lang.reflect.Proxy.invoke(Proxy.java:1006)
+21:13:13.681 W/System.err:   at $Proxy11.getInstallerPackageName(Unknown Source)
+21:13:13.682 W/System.err:   at android.app.ApplicationPackageManager.getInstallerPackageName(ApplicationPackageManager.java:2582)
+21:13:13.682 W/System.err:   at org.chromium.base.BuildInfo.<init>(SourceFile:45)
+21:13:13.682 W/System.err:   at org.chromium.base.BuildInfo.<init>(SourceFile:1)
+21:13:13.682 W/System.err:   at org.chromium.base.BuildInfo$Holder.<clinit>(Unknown Source:3)
+21:13:13.682 W/System.err: Caused by: android.os.RemoteException: Remote stack trace:
+21:13:13.682 W/System.err:   at com.android.server.pm.ComputerEngine.getInstallerPackageName(ComputerEngine.java:5069) ...
+21:13:13.685 V/NativeCrash(27755): Entered signal handler.
+21:13:13.727 V/NativeCrash(31969): Opening dump file: /data/user/0/com.example.multiopen/files/virtual/1790856739251/data/files/crash/NativeCrash_com.tencent.mm_1790856761382.dmp (及 .fulldmp)
+21:13:13.749 I/NativeCrash(31969): get threads total:135
+21:13:13.798 V/NativeCrash(31969): Dump Java in cloned process
+21:13:13.822 E/NativeCrash(27755): Dumper process exited with status -11
+21:13:13.982 I/ActivityManager: Process com.example.multiopen (pid 27755) has died: fg  TOP
+21:13:13.983 I/Zygote: Process 27755 exited due to signal 11 (Segmentation fault)
+21:13:14.002 W/ActivityTaskManager: Force removing ActivityRecord{... com.example.multiopen/.StubActivity3 t88}: app died, no saved state
 ```
 
-系统重启进程后（PID 26515）的 MultiOpen 行（系统自动恢复栈顶的 StubActivity2，微信 Application 再创建一遍，回到欢迎页）：
+系统重启进程后（PID 27756，回到欢迎页，与上一轮相同）：
 
 ```
-21:05:00.385 I/MultiOpen: IActivityManager hooked
-21:05:00.387 I/MultiOpen: IPackageManager hooked
-21:05:00.531 I/MultiOpen: resources built: cookie=15, apk=.../virtual/1790856202165/base.apk (280614450 bytes)
-21:05:00.531 I/MultiOpen: resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
-21:05:00.532 I/MultiOpen: fake process name -> com.tencent.mm
-21:05:01.266 I/MultiOpen: set mInitialApplication -> com.tencent.mm.app.Application
-21:05:02.783 I/MultiOpen: virtual Service created: com.tencent.mm.service.ProcessService$MMProcessService
-21:05:03.036 E/MultiOpen: plugin Application.onCreate failed     （同前：Scene Activity process mismatch ... declared=null current=com.tencent.mm）
-21:05:03.037 I/MultiOpen: virtual Application created: com.tencent.mm.app.Application
-21:05:03.105 I/MultiOpen: newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity
+21:13:14.332 I/MultiOpen: IActivityManager hooked / IPackageManager hooked
+21:13:14.477 I/MultiOpen: resources built: ... (280614450 bytes)   resources self-check OK: 0x7f1202a7 -> com.tencent.mm:style/lc
+21:13:14.478 I/MultiOpen: fake process name -> com.tencent.mm
+21:13:15.151 I/MultiOpen: set mInitialApplication -> com.tencent.mm.app.Application
+21:13:16.928 E/MultiOpen: plugin Application.onCreate failed    （同前：Scene Activity process mismatch ... declared=null current=com.tencent.mm）
+21:13:16.928 I/MultiOpen: virtual Application created: com.tencent.mm.app.Application
+21:13:16.993 I/MultiOpen: newActivity: stub -> com.tencent.mm.plugin.account.ui.WelcomeActivity
 ```
 
-### 欢迎页阶段（点"登录"之前，进程 25414）
+### native 崩溃详情（本轮重点 4：读到了）
+
+微信自带的 NativeCrash 把转储写在宿主私有目录（`files/virtual/<实例>/data/files/crash/NativeCrash_com.tencent.mm_1790856761382.dmp`，1491 字节，文本；另有 `.fulldmp` 179584 字节，我没有贴）。
+我用 `run-as` 读了 `.dmp`，**摘录（只含崩溃信息，没有贴寄存器）**：
 
 ```
-rewriteIntent: ...WelcomeActivity -> stub (flags=0x20000000)  ×2
-newActivity: stub -> LauncherUI；newActivity: stub -> WelcomeActivity
-START StubActivity code=0、StubActivity1 code=0、StubActivity2 code=0（与上一轮相同）
+Device: M2011K2C   API Level: 34   Arch: arm64
+Process: (27755) com.example.multiopen
+Thread: (31263) L.#0ThreadPoolF
+Crash Time: 2026-10-01 21:13:13.685   Live Time: 32s
+Signal: 5 (SIGTRAP), Code: 1 (TRAP_BRKPT)
+Fault Address: 0000007c76ed1fe4
+
+[Native Stack]
+  #00 pc 00000000000cbfe4 /data/data/com.example.multiopen/files/virtual/1790856739251/lib/libcronet.119.0.6045.214.so (BuildId: df72137ab124b4dfe40adc11c9721ff3205d85e2)
+
+[Java Stack]
+（空）
 ```
-（30 条 provider installed、20 条 receiver registered 已折叠；这一阶段没有 FATAL。）
+
+- 栈只有 1 帧，在 `libcronet.119.0.6045.214.so` 偏移 `0xcbfe4`；崩溃线程 `L.#0ThreadPoolF`（Chromium/Cronet 的线程池）。
+- `libcronet` 是被我们宿主解压出来的那份（路径在虚拟实例的 `lib/` 目录下，`extracted 209 so` 里的一个）。
+- 本机的 `/data/tombstones` 仍然读不了；`libc:F` / `DEBUG:F` 的过滤器里**没有抓到任何行**（微信自己的 NativeCrash 处理器先接管了信号）。
 
 ## 本轮云端 Claude 要求的重点
 
-1. **回归: 欢迎页仍正常显示，没有新的 FATAL。** ✔
-2. **桩分配（点"登录"后）**: `rewriteIntent: MobileInputUI -> stub (flags=0x0)`，分配到的是 **`StubActivity3`（通用池，standard/singleTop 那一组）**，**不是** StubTask*/StubInstance*。
-   这一次点击没有走到 singleTask/singleInstance 专用桩（因为崩溃发生在 MobileInputUI 显示之后）。
-   `newActivity: stub -> com.tencent.mm.plugin.account.ui.MobileInputUI` 出现了。
-3. **result code**: 登录页那条 `START ... StubActivity3 ... result code=0`（新建成功）。本轮 StubActivity* 的 START 共 4 条，全部 `code=0`。
-4. **点进去崩了**: 是。登录页创建并显示后，进程在约 0.46 秒内收到 SIGSEGV 死亡。**没有刷屏循环**（rewriteIntent 总共 3 次）。
+1. **点"登录"后还崩不崩: 还崩。** `signal 11` / `am_proc_died` / `NativeCrash` 都在。区别：这次我拿到了 native 信息。
+2. **`getInstallerPackageName` 的 `Unknown package` 还出现吗: 还出现**（`BuildInfo$Holder.<clinit>` 抛 `ExceptionInInitializerError`，Caused by `IllegalArgumentException: Unknown package: com.tencent.mm`，与上一轮完全相同）。
+   **`AppsFilter ... -> com.tencent.mm BLOCKED`: 不再出现**（0 行）。但要注意：**这一轮手机上已经没有真实微信**，系统对 `com.tencent.mm` 本来就返回 "Unknown package"，所以 AppsFilter 那一行消失不能说明 `QUERY_ALL_PACKAGES` 起作用了。
+3. **登录页能不能稳定显示: 不能。** `MobileInputUI` 创建并显示了约 0.37 秒（Displayed 21:13:13.612 → 进程死亡 21:13:13.982），然后进程死亡、系统重启。
+4. **native backtrace: 有（只有 1 帧）**，见上：`SIGTRAP` @ `libcronet.119.0.6045.214.so + 0xcbfe4`，线程 `L.#0ThreadPoolF`。
+5. 登录页没稳住，所以没有继续点页面上的其它元素，singleTask / singleInstance 桩仍然没走到。
 
-## 本地 AI 的观察（未验证，没有 tombstone 可读）
+### 本地 AI 的分析（未验证，没有改源码）
 
-- 死因证据只有这些：`Zygote: Process 25414 exited due to signal 11 (Segmentation fault)`，`am_proc_died`，MIUI 的 `NativeCrash: Dumper process exited with status -11`。
-  **我读不到 native 的栈**：`/data/tombstones` 权限不够，logcat 里没有 `DEBUG`/`F/libc` 的 backtrace，AndroidRuntime 也没有 FATAL。
-- 进程死亡前约 0.4 秒（21:04:59.614；NativeCrash 的记录在约 170 毫秒之后）有一个 **Cronet 相关的 Java 异常**：`org.chromium.base.BuildInfo$Holder.<clinit>` 在 `getInstallerPackageName("com.tencent.mm")` 里抛
-  `IllegalArgumentException: Unknown package: com.tencent.mm`，变成 `ExceptionInInitializerError`（打到 System.err）。
-  - 这次调用经过一个 IPackageManager 的动态代理（`ig5.n1.invoke` → `$Proxy11`，类名混淆，看起来是微信自己的），最终到了系统 PackageManagerService，系统回"Unknown package"。
-  - 同一时刻系统日志有 `AppsFilter: interaction: ... com.example.multiopen/10251 -> ... com.tencent.mm/10260 BLOCKED`：**包可见性过滤**把宿主看真实微信包的权限挡住了
-    （手机上真的装着 com.tencent.mm，但宿主没有 `<queries>`/`QUERY_ALL_PACKAGES` 能看见它）。
-  - 虚拟微信的包名正好等于手机上真实微信的包名，所以像 `getInstallerPackageName` 这类按包名查询的调用，看起来没有被宿主的 PackageManager 钩子拦住，直接到了真实系统（这是我的推断，没有核对宿主钩子的覆盖范围）。
-  - **这是推测**：Cronet 的 native 初始化可能通过 JNI 调 `BuildInfo.getAll()`，类初始化失败后 native 拿到 null / 异常没处理，触发 SIGSEGV。我没有证据证明这两件事有因果关系，只是时间上相邻（约 170 毫秒内）。
-- 环境因素提醒：**这台手机装着真实的微信**，这可能让上面的"Unknown package"和 AppsFilter 的行为与"手机上没装微信"的情况不同；如果云端想排除这个干扰，可以在没装真实微信的设备上对比，或者在宿主里对 `com.tencent.mm` 的 `getInstallerPackageName` 等包名查询返回虚拟包信息。
-- 我没有点"注册"，也没有测 singleTask / singleInstance 桩（这一步需要登录页稳定显示后才能继续点下去）。
+- **宿主的 `getInstallerPackageName` 拦截没有生效，原因看栈能说清楚**：调用栈是
+  `ApplicationPackageManager.getInstallerPackageName → $Proxy11.getInstallerPackageName → java.lang.reflect.Proxy.invoke → ig5.n1.invoke(:202) → Method.invoke → IPackageManager$Stub$Proxy.getInstallerPackageName`。
+  栈里**没有任何 `com.example.multiopen` 的帧**；`ig5.n1`（混淆名，看起来是微信自己的类）这个 IPackageManager 动态代理直接把调用 `Method.invoke` 到真实的 `IPackageManager$Stub$Proxy` 上。
+  也就是说微信在宿主之后又把 `ActivityThread.sPackageManager`（或 `ApplicationPackageManager.mPM`）包了一层，**它包的是真实的 binder 代理，绕过了宿主的 hook**。（这是推断，我没看微信那段代码，只看了栈。）
+- **异常和 native 崩溃的关联（有证据，但不是完全证明）**：`BuildInfo.getAll` 是 Chromium 里被 native 通过 JNI 调用的 Java 方法；它在 `BuildInfo$Holder.<clinit>` 抛 `ExceptionInInitializerError` 之后，约 4 毫秒内 `NativeCrash` 进入信号处理器（21:13:13.681 → 21:13:13.685），
+  崩溃线程是 Cronet 的线程池，信号是 `SIGTRAP`（Chromium 的 `CHECK` / `IMMEDIATE_CRASH` 失败时就是用断点陷阱）。我据此推测：native 侧在 JNI 调用 `BuildInfo.getAll()` 时遇到 Java 异常，Chromium 的检查失败触发 `SIGTRAP`。
+  我没有符号，无法确认 `0xcbfe4` 具体是哪个函数。
+- **最终退出信号是 11 而不是 5**：因为微信的转储进程自己也崩了（`Dumper process exited with status -11`），系统看到的是后面的这次崩溃。所以"signal 11"只是现象，真正的起点是 SIGTRAP。
+- 可能的修法思路（供云端决定，我没有试）:
+  - 让这个 `getInstallerPackageName("com.tencent.mm")` 返回正常值（不抛异常）：要么拦在微信包装之前/之后（比如在微信安装它的代理之后再 hook 一次，或者包住它的 target），要么在宿主侧把真实 `IPackageManager` 的 binder 层拦住。
+  - 或者想办法让 Cronet 的 `BuildInfo` 初始化时拿到的 installer 为 null 而不是抛异常。
+- 环境提醒：这一轮真实微信已经不在手机上。因此"真实微信存在 → 包可见性"这条线索被排除了：**去掉真实微信后，崩溃一模一样**（同一个 `Unknown package`、同一个 `libcronet` SIGTRAP）。所以根因不是 AppsFilter / 包可见性，而是 `getInstallerPackageName("com.tencent.mm")` 本身对虚拟包没有给出有效结果。
 
 ## 异常计数
 FATAL EXCEPTION（AndroidRuntime）: 0 次
-native 崩溃: 1 次（SIGSEGV，PID 25414，点"登录"后约 0.46 秒；无 tombstone 可读）
-plugin Application.onCreate failed: 2 次（被捕获：Scene Activity process mismatch；第 1 次启动一次 + 崩溃重启后一次）
+native 崩溃: 1 次（SIGTRAP @ libcronet.119.0.6045.214.so+0xcbfe4，线程 L.#0ThreadPoolF；最终退出信号 11；点"登录"后约 0.37 秒）
+`Unknown package: com.tencent.mm`: 1 次（System.err）
+AppsFilter ... com.tencent.mm BLOCKED: 0 次
+plugin Application.onCreate failed: 2 次（被捕获：Scene Activity process mismatch；首次启动 + 崩溃重启后各一次）
 rewriteIntent: 3 次（WelcomeActivity ×2，flags=0x20000000；MobileInputUI ×1，flags=0x0）
-newActivity: stub: 4 次（LauncherUI、WelcomeActivity、MobileInputUI、重启后再一次 WelcomeActivity）
+newActivity: stub: 4 次（LauncherUI、WelcomeActivity、MobileInputUI、重启后 WelcomeActivity）
 ActivityTaskManager START StubActivity*: 4 次，全部 result code=0
 mCoreAccount not initialized: 0 次
 Resources$NotFoundException: 0 次
@@ -113,4 +121,4 @@ UnsatisfiedLinkError: 0 次
 ClassNotFoundException: 0 次
 SecurityException: 0 次
 NoClassDefFoundError: 0 次
-ANR 弹窗: 有（启动期，点系统弹窗"等待"后消失）；点"登录"之后没有再出现 ANR
+ANR 弹窗: 本轮没有出现
