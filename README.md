@@ -42,7 +42,12 @@ gradle wrapper
 - [x] ContentProvider 实例化 + onCreate（`VirtualProviders`）
 - [ ] 后台保活 / startForeground / 推送拉起（需系统级桩 Service + AMS 方案）
 - [ ] content:// 跨组件解析（hook ContentResolver / getContentProvider，FileProvider 跨 App 分享）
-- [~] Tinker 热修复（微信 Application 基于 Tinker）：attachBaseContext 需 `ApplicationInfo.metaData`（已补 `GET_META_DATA`）；attachBaseContext 期间会重入 startService（已改占位登记）
+- [x] Tinker 热修复（微信 Application 基于 Tinker）：attachBaseContext 需 `ApplicationInfo.metaData`（已补 `GET_META_DATA`）；attachBaseContext 期间会重入 startService（已改占位登记）
 - [x] 宿主权限声明（INTERNET / ACCESS_NETWORK_STATE 等）：修 Cronet 的 "Neither user nor process has ACCESS_NETWORK_STATE"
-- [ ] 资源系统：微信部分资源 `Resources$NotFoundException`（白屏主因，`le5.j` 查不到 0x7f11…/0x7f0e… 等）。微信是插件化 + 资源混淆，疑似需 LoadedApk 级资源虚拟化而非手工 new Resources；待 aapt 确认这些 ID 是否在 base.apk 里再定方向
-- [ ] 多桩池（不同 launchMode / 竖屏锁定 / 透明主题）
+- [x] 资源系统：`le5.j` 查不到资源是因为微信后台基础设施用进程全局 `currentApplication` 拿 Resources → 已将虚拟 Application 设为 `mInitialApplication`，`createConfigurationContext` 派生 context 也保留插件资源
+- [x] 核心 Kernel（mCoreAccount）初始化：靠进程名伪装（`fakeProcessName` → 包名，多进程 Kernel 分发）+ provider 先于 Application.onCreate
+- [x] 启动期跨线程死锁：`ensure` 的 onCreate 移出锁（ForkJoin worker 回调 bindService 不再被锁住）
+- [x] 桩池（`StubActivity` + `StubActivity1..7` 轮换）：破 SINGLE_TOP 单桩启动循环 → **WelcomeActivity 创建、微信欢迎页显示出来**
+- [ ] 启动期 ANR：冷启动主线程忙 ~8s（`Displayed +7s917ms`）触发系统“无响应”，点“等待”可继续；待确认是否仅首次冷启动（dex2oat 未缓存）
+- [ ] 登录：连腾讯服务器做设备注册 / 安全校验，非官方容器 + 伪造环境下很可能被风控拦（能否通过不在可控范围）
+- [ ] 桩池进阶：launchMode=singleTask/singleInstance 的目标需对应 launchMode 的桩；竖屏锁定 / 透明主题
