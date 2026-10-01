@@ -7,50 +7,48 @@ import android.util.Log
 
 /** 为每个虚拟应用实例创建并持有它自己的 Application（插件声明的子类，没有则用 android.app.Application） */
 object VirtualApplications {
+    private val lock = Any()
     private val apps = HashMap<String, Application>()
 
-    @Synchronized
-    fun get(instanceId: String): Application? = apps[instanceId]
+    fun get(instanceId: String): Application? = synchronized(lock) { apps[instanceId] }
 
-    @Synchronized
+    /**
+     * 锁内只做“创建 Application + attachBaseContext + 登记占位”；耗时且会跨线程回调进来的 onCreate / provider
+     * 放到锁外执行。原因：微信的 Application.onCreate 会在主线程同步等后台 ForkJoin 任务，而那些任务又会从别的
+     * 线程调宿主的 bindService → 回到 ensure；若整段都持锁，后台线程抢不到锁、主线程又在等它 → 跨线程死锁。
+     * 占位先登记，所以任何重入（同线程 attachBaseContext、或跨线程 onCreate 期间）都能立刻拿到同一个实例、不阻塞。
+     */
     fun ensure(host: Context, rt: PluginRuntime): Application? {
-        apps[rt.app.instanceId]?.let { return it }
-        return try {
-            // 微信是多进程 App，按“当前进程名”决定初始化哪些 Kernel；它的主进程名 == 包名。
-            // 不伪装的话进程名是宿主的 com.example.multiopen，微信判定“非主进程”，跳过账号 Kernel 初始化，
-            // 之后 LauncherUI 访问 mCoreAccount 就 "not initialized"。必须赶在微信任何代码跑之前改。
-            fakeProcessName(rt.app.packageName)
-            Watchdog.start() // 诊断：主线程卡住时定时打印它的调用栈
-            val vctx = VirtualContext(host.applicationContext, rt.app.instanceId, VirtualCore.dataDir(rt.app), rt) { get(rt.app.instanceId) }
-            val app = rt.classLoader.loadClass(rt.app.applicationClass ?: "android.app.Application")
-                .getDeclaredConstructor().newInstance() as Application
-            // 先登记占位：Tinker 等在 attachBaseContext 期间就会重入（startService → ensure），
-            // 若此时 apps 里没有，会重复创建第二个 Application。@Synchronized 是可重入锁，同线程重入安全。
-            apps[rt.app.instanceId] = app
-            try {
+        val id = rt.app.instanceId
+        val created: Application
+        synchronized(lock) {
+            apps[id]?.let { return it } // 已创建（占位或完成）→ 立即返回，绝不在锁内等待
+            created = try {
+                // 进程名必须赶在微信任何代码跑之前伪装（多进程 Kernel 分发按进程名，主进程名==包名）
+                fakeProcessName(rt.app.packageName)
+                val vctx = VirtualContext(host.applicationContext, id, VirtualCore.dataDir(rt.app), rt) { get(id) }
+                val app = rt.classLoader.loadClass(rt.app.applicationClass ?: "android.app.Application")
+                    .getDeclaredConstructor().newInstance() as Application
+                apps[id] = app // 先登记占位，再 attach：attachBaseContext 期间的重入能拿到它，避免重复创建
                 ContextWrapper::class.java.getDeclaredMethod("attachBaseContext", Context::class.java)
                     .apply { isAccessible = true }.invoke(app, vctx)
+                app
             } catch (t: Throwable) {
-                apps.remove(rt.app.instanceId) // attachBaseContext 失败则回滚占位
-                throw t
+                apps.remove(id)
+                Log.e(MultiOpenApp.TAG, "create virtual Application failed", t)
+                return null
             }
-            // 让 ActivityThread.currentApplication() 返回这个虚拟 Application：微信的 report.service /
-            // platformtools 等进程级基础设施（常在后台线程）通过它拿全局 Context/Resources，否则拿到宿主
-            // Application，其 Resources 不含微信 apk → le5.j 查资源 NotFound。必须在 onCreate 前设好。
-            setInitialApplication(app)
-            // 系统真实启动顺序：attachBaseContext → 所有 ContentProvider.onCreate → Application.onCreate。
-            // 微信把核心 Kernel（mCoreAccount）初始化放在某个 ContentProvider 里，所以 provider 必须先于
-            // Application.onCreate，否则 onCreate 里访问 mCoreAccount 会 "not initialized"。
-            try { VirtualProviders.ensure(host, rt) } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "providers ensure failed", t) }
-            try { app.onCreate() } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "plugin Application.onCreate failed", t) }
-            Log.i(MultiOpenApp.TAG, "virtual Application created: ${app.javaClass.name}")
-            // 静态广播注册时机不敏感，放在 onCreate 之后
-            try { VirtualReceivers.ensure(host, rt) } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "receivers ensure failed", t) }
-            app
-        } catch (t: Throwable) {
-            Log.e(MultiOpenApp.TAG, "create virtual Application failed", t)
-            null
         }
+        // —— 锁外 —— 走到这里的线程一定是刚新建该实例的那个（已存在的在锁内就 return 了），由它负责初始化。
+        Watchdog.start() // 诊断
+        // currentApplication() 指向虚拟 Application（微信后台基础设施靠它拿全局 Context/Resources）
+        setInitialApplication(created)
+        // 系统真实顺序：provider.onCreate 先于 Application.onCreate（微信核心 Kernel 在 provider 里初始化）
+        try { VirtualProviders.ensure(host, rt) } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "providers ensure failed", t) }
+        try { created.onCreate() } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "plugin Application.onCreate failed", t) }
+        Log.i(MultiOpenApp.TAG, "virtual Application created: ${created.javaClass.name}")
+        try { VirtualReceivers.ensure(host, rt) } catch (t: Throwable) { Log.e(MultiOpenApp.TAG, "receivers ensure failed", t) }
+        return created
     }
 
     /**

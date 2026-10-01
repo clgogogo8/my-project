@@ -5,28 +5,28 @@
 
 ---
 
-## 目标 commit：见最新（Watchdog 增强：加后台线程栈）
+## 目标 commit：见最新（修 VirtualApplications.ensure 跨线程死锁）
 
-## 背景（供你理解）
-- 主线程卡在 `ForkJoinTask.get()`（微信 `ph5.n0` 启动框架），等一个任务完成；进程里似乎没有 ForkJoin worker，
-  所有线程睡眠。需要看那个任务在哪个线程、在等什么。
-- 本轮不改行为，只增强诊断：watchdog 第 2 次采样时，额外打印所有“涉及 com.tencent / ForkJoin / ph5 / gp0 /
-  yu5 / xu5”的后台线程栈（日志行形如 `bg thread '名字' (状态): ...`）。
+## 改了什么（这是实质修复，不是诊断）
+- 上一轮定位到死锁：`ensure` 持锁跑 `app.onCreate()`，而 onCreate 会从 ForkJoin 线程 `wc_srvinit_3`
+  回调 `bindService → ensure`，后台线程抢不到锁、主线程又在等它 → 死锁。
+- 本轮：`ensure` 的锁只保护“创建 Application + attachBaseContext + 登记占位”，把 `onCreate` / provider /
+  receiver 移到锁外执行。这样后台线程重入 `ensure` 时占位已登记，立即返回、不阻塞。
+- Watchdog 仍保留（若还卡会继续打主线程+后台线程栈）。
 
 ## 步骤
 1. 编译 `:app`，装宿主，`pm clear com.example.multiopen` 清数据。
-2. 重新添加微信 APK，打开，**观察满 20 秒以上**（让 watchdog 跑到第 2、3 次）。别点 ANR 的“确定”。
-3. 抓 logcat（只 MultiOpen 标签）。
+2. 重新添加微信 APK，打开，观察约 20~30 秒。
+3. 抓 logcat（只 MultiOpen 标签 + 崩溃栈）。
 
 ## 本轮重点看（最关键）
-- 所有 `bg thread '...'` 的完整栈 —— **这是本轮核心产物，请完整贴回**（尤其栈里含 ForkJoin、ph5.n0、
-  gp0、com.tencent.* 的线程）。
-- 有没有名字像 `ForkJoinPool-*-worker-*` 或 `ForkJoinPool.commonPool-worker-*` 的线程？它们的状态和栈是什么？
-- 那些 `[GT]ColdPool#N` / `[GT]HotPool#N` / `wc_srvinit_N` 线程里，有没有哪个栈顶也是在 `wait/park/await`
-  等另一个东西（等待链），或者卡在某个 `com.tencent.*` 调用上？把这类线程重点标出来。
-- 主线程 #1/#2/#3 栈是否仍与上一轮相同（确认仍卡同一处）。
+- **死锁有没有解**：是否出现 `virtual Application created: com.tencent.mm.app.Application`（上一轮卡死时它一直没出现）。
+  之后是否出现 `newActivity: stub -> com.tencent.mm.ui.LauncherUI` 及后续日志。
+- **微信有没有显示出任何界面**（闪屏/启动页/隐私弹窗/登录页）—— 这是本轮要确认的头等大事，有就详细描述、能截图更好。
+- 是否还 ANR / 还白屏；watchdog 的 `main-thread stack` 是否还是卡在 `ForkJoinTask.get()`（若还卡，把新栈和 bg thread 栈贴回）。
+- 若 onCreate 跨过去后换了**新的崩溃**，把第一个 `FATAL` / `Caused by:` 完整贴回。
 
 ## 写回 debug/last-run.md（覆盖），然后
 ```
-git add debug/last-run.md && git commit -m "test run: 后台线程栈" && git push
+git add debug/last-run.md && git commit -m "test run: 死锁修复" && git push
 ```
