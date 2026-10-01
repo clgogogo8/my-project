@@ -80,6 +80,13 @@ object PackageManagerHook {
                 val app = resolve(comp.packageName) ?: return null
                 return VirtualAppInfo.componentInfo(host, app, name, comp.className)?.let { Box(it) }
             }
+            // 虚拟包没真正安装；查 installer 会 "Unknown package" 抛异常（连累 Cronet 等 native）。
+            // 用宿主自己的 installer（宿主包非虚拟、查询安全）顶上，避免异常。
+            "getInstallerPackageName" -> {
+                val pkg = first as? String ?: return null
+                if (!isVirtual(pkg)) return null
+                return Box(runCatching { host.packageManager.getInstallerPackageName(host.packageName) }.getOrNull())
+            }
             else -> return null
         }
     }

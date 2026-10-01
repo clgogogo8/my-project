@@ -18,6 +18,9 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- 插件包名可能与手机上真实安装的包同名（如 com.tencent.mm）；没有包可见性权限时，宿主查询该包会被
+         AppsFilter 挡住并抛 "Unknown package"，连累 Cronet 等 native 初始化崩溃。放开可见性。 -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <application android:name=".MultiOpenApp" android:label="MultiOpen" android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
         <activity android:name=".MainActivity" android:exported="true">
