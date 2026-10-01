@@ -5,30 +5,31 @@
 
 ---
 
-## 目标 commit：见最新（ServiceManagerHook 包装 package binder）
+## 目标 commit：见最新（两条诊断日志）
 
-## 背景 / 改了什么
-- 上一轮确认：登录页 SIGTRAP@libcronet，根因是微信自己从 ServiceManager 另拿 IPackageManager binder（绕过我们的
-  sPackageManager hook），`getInstallerPackageName("com.tencent.mm")` 打到真实系统 → Unknown package → Cronet 崩。
-- 本轮：新增 `ServiceManagerHook`，把 ServiceManager 缓存里的 "package" binder 换成代理，让 asInterface 拿到
-  我们的 IPackageManager 拦截层。这样微信那层代理也会走我们的拦截，虚拟包查询不再打真实系统。
-- **这是较底层的 binder 包装，首要是回归：确认没把欢迎页弄坏。**
+## 背景 / 本轮目的（纯诊断，不改行为）
+- ServiceManager 包装生效了，但登录页仍 SIGTRAP@libcronet，`getInstallerPackageName("com.tencent.mm")` 仍打到真实系统。
+- 要确认二选一：① 微信根本没走我们包装的 binder（直连真实 binder）；② 走了但 asInterface 没采用我们的接口。
+- 加了两条日志：
+  - `wrapped package binder: queryLocalInterface -> ourIpm`（微信经过我们包装 binder 时打）
+  - `intercept getInstallerPackageName(...)`（我们的拦截被调到时打）
 
 ## 步骤
 1. 编译 `:app`，装宿主，`pm clear com.example.multiopen` 清数据。
-2. 添加微信 APK，打开，等欢迎页（有 ANR 弹窗点“等待”）。
-3. 点“登录”，**停留观察 10 秒以上**，看还崩不崩、登录页能不能停住。
-4. 抓 logcat：`adb logcat MultiOpen:I ActivityTaskManager:I AndroidRuntime:E *:S`
+2. 添加微信 APK，打开，等欢迎页；点“登录”，等它崩/重启。
+3. 抓 logcat：`adb logcat MultiOpen:I AndroidRuntime:E *:S`
 
-## 本轮重点看
-1. **回归**：是否出现 `ServiceManager package binder wrapped` 日志？欢迎页是否仍正常显示？有没有新崩溃/黑屏？
-2. 点“登录”后：`Unknown package: com.tencent.mm` 的 `ExceptionInInitializerError` 还出现吗？
-3. 还崩不崩（`signal 11` / `SIGTRAP` / `NativeCrash` / `am_proc_died`）？
-4. **登录页（MobileInputUI，手机号输入页）能不能稳定停住**？能看到就描述界面、截图。
-5. 若登录页稳住了：可再点“切换到扫码登录”之类，看会不会用到 singleTask/singleInstance 桩、有没有新崩溃。
-6. 若还崩：贴新的 native 崩溃摘要（线程名、so、偏移）和崩溃前最后的 MultiOpen / System.err 行。
+## 本轮重点看（就看这两条日志在不在，这是关键）
+1. 整个过程里有没有出现 `wrapped package binder: queryLocalInterface -> ourIpm`？出现几次？
+2. 点“登录”崩溃前后，有没有出现 `intercept getInstallerPackageName(com.tencent.mm)`？
+3. `Unknown package: com.tencent.mm` 还在不在（应该还在，除非 2 出现了）。
+4. 这两条的**有/无组合**最重要，请明确写出来：
+   - 都没有 → 微信直连真实 binder，绕过了 ServiceManager 缓存。
+   - 有 queryLocalInterface、没有 intercept → asInterface 没采用我们的接口。
+   - 两条都有但还崩 → 拦截被调到了但没挡住。
+5. 其余照常（崩不崩、native 摘要可略，和上轮同位置就只说“同上”）。
 
 ## 写回 debug/last-run.md（覆盖），然后
 ```
-git add debug/last-run.md && git commit -m "test run: ServiceManager binder 包装" && git push
+git add debug/last-run.md && git commit -m "test run: PMS 拦截诊断日志" && git push
 ```

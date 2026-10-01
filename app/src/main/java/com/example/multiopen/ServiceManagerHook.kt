@@ -38,6 +38,7 @@ object ServiceManagerHook {
 
             val wrapped = Proxy.newProxyInstance(IBinder::class.java.classLoader, arrayOf(IBinder::class.java)) { _, method, args ->
                 if (method.name == "queryLocalInterface" && args?.getOrNull(0) == IPM_DESCRIPTOR) {
+                    Log.i(MultiOpenApp.TAG, "wrapped package binder: queryLocalInterface -> ourIpm") // 诊断：微信是否经过我们的 binder
                     ourIpm // asInterface 看到本地接口就直接用它，不再 new Stub.Proxy(真实 binder)
                 } else try {
                     method.invoke(realBinder, *(args ?: emptyArray()))

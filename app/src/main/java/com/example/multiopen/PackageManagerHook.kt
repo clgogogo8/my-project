@@ -96,6 +96,7 @@ object PackageManagerHook {
             "getInstallerPackageName" -> {
                 val pkg = first as? String ?: return null
                 if (!isVirtual(pkg)) return null
+                Log.i(MultiOpenApp.TAG, "intercept getInstallerPackageName($pkg)") // 诊断：拦截是否被调到
                 return Box(runCatching { host.packageManager.getInstallerPackageName(host.packageName) }.getOrNull())
             }
             else -> return null
