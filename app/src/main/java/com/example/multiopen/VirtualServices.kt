@@ -73,6 +73,10 @@ object VirtualServices {
         return true
     }
 
+    /** 这个 Service 实例是不是我们反射创建的虚拟 Service（ART hook 用来只拦截虚拟 Service 的 startForeground） */
+    @Synchronized
+    fun isManaged(service: Service): Boolean = services.values.any { it === service }
+
     /** 判断 Intent 的显式组件是否指向这个插件的 Service；是则返回规范化类名 */
     private fun pluginServiceClass(rt: PluginRuntime?, intent: Intent): String? {
         rt ?: return null

@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Android 14 前台 Service 需声明具体类型权限；保活用 specialUse（多开容器自身用途，清单里带 property 说明） -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
@@ -50,5 +52,14 @@
         <!-- 透明主题桩：给透明/悬浮的插件 Activity 用（窗口透明由 manifest 主题在 attach 时决定） -->
         <activity android:name=".StubTranslucent0" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <activity android:name=".StubTranslucent1" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!-- 宿主自己的真实前台 Service：虚拟 Service 调 startForeground 时转交它来真正把进程拉到前台 -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="multiopen_keepalive" />
+        </service>
     </application>
 </manifest>

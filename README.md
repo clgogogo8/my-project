@@ -40,7 +40,7 @@ gradle wrapper
 - [x] Service（进程内分发 onCreate/onStartCommand/onBind/onDestroy，`VirtualServices`）
 - [x] 静态 BroadcastReceiver（按 action 动态注册转发，`VirtualReceivers`）
 - [x] ContentProvider 实例化 + onCreate（`VirtualProviders`）
-- [ ] 后台保活 / startForeground / 推送拉起（需系统级桩 Service + AMS 方案）
+- [~] 后台保活 / startForeground：宿主自带真前台 Service（`KeepAliveService`，Android 14 `specialUse` 类型）+ ART hook 拦虚拟 Service 的 `startForeground`/`stopForeground` 转交它（引用计数）。代码就位；实际保活/推送拉起效果需登录后才能验证
 - [ ] content:// 跨组件解析（hook ContentResolver / getContentProvider，FileProvider 跨 App 分享）
 - [x] Tinker 热修复（微信 Application 基于 Tinker）：attachBaseContext 需 `ApplicationInfo.metaData`（已补 `GET_META_DATA`）；attachBaseContext 期间会重入 startService（已改占位登记）
 - [x] 宿主权限声明（INTERNET / ACCESS_NETWORK_STATE 等）：修 Cronet 的 "Neither user nor process has ACCESS_NETWORK_STATE"
@@ -58,5 +58,6 @@ gradle wrapper
 
 ### 还需真机专项（都要动 hidden 类型或 native，不能盲写，需单独一轮真机调）
 - [~] content:// 跨组件解析：`ActivityManagerHook` 拦 `getContentProvider`/`getContentProviderExternal`，对已登记虚拟 authority 返回本地 provider 的 `IContentProvider`（`ContentProviderHolder`，进程内）。代码就位、回归通过；实际 FileProvider 分享效果需登录后聊天场景验证
-- [ ] 系统级保活 / startForeground / 推送：manifest 声明桩 Service，把 startService/startForeground 经 AMS 走系统（当前是进程内模拟，系统不感知）
+- [~] 系统级保活 / startForeground / 推送：宿主声明真前台 Service（`KeepAliveService`），虚拟 Service 的 `startForeground` 经 ART hook 转交它真正把进程拉到前台（系统感知）。进程内 Service 模拟仍在；推送拉起（被系统/AMS 唤起冷启动）需登录后验证
+- [ ] 渲染插件自己的通知内容：当前 `KeepAliveService` 只显示宿主通用通知，不渲染插件的 icon/标题（插件资源表宿主 NotificationManager 解析不了）
 - [ ] native 层路径重定向 + 设备信息伪装：需 PLT/inline hook（如 xhook）改 /proc、Environment 公共路径、设备标识；与登录风控强相关，且不保证能过

@@ -28,6 +28,8 @@ class MultiOpenApp : Application() {
             ServiceManagerHook.install(this, isVirtual, resolve)
             // ART 方法级 hook：拦微信绕过代理、经 ApplicationPackageManager.getInstallerPackageName 打真实系统的调用
             ArtHook.install(this, isVirtual)
+            // 虚拟 Service 的 startForeground/stopForeground 转交宿主真前台 Service，避免假 token 打 AMS 崩溃
+            ArtHook.installForegroundRouting(this)
         } catch (t: Throwable) { Log.e(TAG, "hook install failed", t) }
     }
 

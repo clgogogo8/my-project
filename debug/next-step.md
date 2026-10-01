@@ -28,6 +28,14 @@
 3. **回归**：三个页面是否仍稳定、无崩溃、画面正常（和上一轮一致即可）。
 4. 不需要登录。
 
+## 附带（本轮同一个 APK 里还加了"前台保活"代码，登录后才真正用得上，这轮只看启动不崩）
+这轮**不需要专门测保活**（微信的保活/推送 Service 大多登录后才起），只要顺带确认：
+- 启动日志里有没有 `ART hook installed: Service.startForeground/stopForeground routing`（有=hook 装上了）。
+  如果换成 `ART foreground-routing hook install failed` 或 `hook startForeground(...) 跳过`，把那几行贴回来。
+- 有没有因为这个新 hook 导致的**启动崩溃**（应该没有，全程 try/catch）。
+- 如果碰巧看到 `startForeground intercepted for virtual service ...` 或宿主冒出一个"正在后台运行"的通知，
+  顺手记一下是哪个 Service；没有也正常。
+
 ## 写回 debug/last-run.md（覆盖），然后
 ```
 git add debug/last-run.md && git commit -m "test run: 透明桩误判修复" && git push
