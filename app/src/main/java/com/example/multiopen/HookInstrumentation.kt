@@ -64,8 +64,8 @@ open class HookInstrumentation(protected val ctx: Context, protected val base: I
             if (!isPluginActivity) return intent
             Log.i(TAG, "rewriteIntent: $cls -> stub (flags=0x${Integer.toHexString(intent.flags)})")
             val launchMode = rt.manifest.activityLaunchModes[cls] ?: 0
-            // 透明/悬浮主题的目标用透明桩（窗口透明要由桩的 manifest 主题在 attach 时决定），否则按 launchMode
-            val stubName = if (isTranslucentTheme(rt, rt.app.themeFor(cls))) StubActivity.nextTranslucentStub()
+            // 悬浮/对话框主题的目标用透明桩（窗口透明要由桩的 manifest 主题在 attach 时决定），否则按 launchMode
+            val stubName = if (needsTranslucentStub(rt, cls, rt.app.themeFor(cls))) StubActivity.nextTranslucentStub()
                            else StubActivity.nextStub(launchMode)
             Intent(intent)
                 .setComponent(ComponentName(ctx.packageName, stubName))
@@ -103,17 +103,27 @@ open class HookInstrumentation(protected val ctx: Context, protected val base: I
         }
     }
 
-    /** 用插件资源解析主题的 windowIsTranslucent / windowIsFloating，判断该 Activity 是否透明 */
-    private fun isTranslucentTheme(rt: PluginRuntime, themeId: Int): Boolean = try {
+    /**
+     * 判断该 Activity 是否需要透明桩。判据只用 `windowIsFloating`——对话框/悬浮窗才真正需要透明宿主窗口。
+     * `windowIsTranslucent` 不作判据：很多全屏沉浸式主题（含微信的 application 主题）为了状态栏透出也会设
+     * 它为 true，但页面内容是不透明的全屏页，放进透明桩会导致背景透出/黑底。实测微信手机号登录页
+     * （MobileInputUI）、账号密码页（LoginUI）用的就是 application 主题、曾被误判为透明，就是这个原因。
+     * 两个布尔值都打日志（本地 AI 要求），方便核对判断依据。
+     */
+    private fun needsTranslucentStub(rt: PluginRuntime, cls: String, themeId: Int): Boolean = try {
         if (themeId == 0) false else {
             val theme = rt.resources.newTheme().apply { applyStyle(themeId, true) }
             val a = theme.obtainStyledAttributes(
                 intArrayOf(android.R.attr.windowIsTranslucent, android.R.attr.windowIsFloating))
-            val r = a.getBoolean(0, false) || a.getBoolean(1, false)
+            val translucent = a.getBoolean(0, false)
+            val floating = a.getBoolean(1, false)
             a.recycle()
-            r
+            val name = runCatching { rt.resources.getResourceName(themeId) }.getOrNull()
+            Log.i(TAG, "theme check $cls theme=0x${Integer.toHexString(themeId)}($name) " +
+                "translucent=$translucent floating=$floating -> translucentStub=$floating")
+            floating
         }
-    } catch (t: Throwable) { false }
+    } catch (t: Throwable) { Log.w(TAG, "theme check failed for $cls", t); false }
 
     private fun setField(clazz: Class<*>, obj: Any, name: String, value: Any?) {
         var c: Class<*>? = clazz
