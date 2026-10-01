@@ -25,7 +25,7 @@ gradle wrapper
      - [x] native so：按设备 ABI 从 APK 解出 `lib/<abi>/*.so`（`NativeLibs`），作为 `DexClassLoader` 的 librarySearchPath
      - [x] `getApplicationInfo()` 伪装：包名 / dataDir / nativeLibraryDir / sourceDir 指向本实例（`VirtualContext`）
      - [x] `getPackageName()` 伪装 + `IActivityManager` 代理 hook（`ActivityManagerHook`）：应用读插件包名，binder 层把误入 AMS 的虚拟包名归一回宿主包名
-     - [x] `PackageManager` 代理 hook（`PackageManagerHook`）：拦截对虚拟包的 getPackageInfo / getApplicationInfo，用 `VirtualAppInfo` 现解 APK 构造结果
+     - [x] `PackageManager` 代理 hook（`PackageManagerHook`）：拦截对虚拟包的 getPackageInfo / getApplicationInfo（按包名）与 getActivityInfo / getServiceInfo / getProviderInfo / getReceiverInfo（按 ComponentName），用 `VirtualAppInfo` 现解 APK 构造结果
      - [ ] 外部存储重定向
 4. [~] Service / Broadcast / ContentProvider（进程内，已可回调生命周期）；系统级保活与通知待办
 5. [ ] Native 层路径重定向与设备信息伪装

@@ -1,5 +1,6 @@
 package com.example.multiopen
 
+import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import java.lang.reflect.InvocationHandler
@@ -15,7 +16,8 @@ import java.lang.reflect.Proxy
  *
  * 局限：IPackageManager 是进程级单例，拿不到「哪个实例在问」，同一包多开时返回的是其中某个实例的
  * 路径。真正的数据隔离仍靠 VirtualContext（文件 IO 都经它按实例重定向），PMS 返回的路径字段实际很少
- * 被用于读写。只拦截 getPackageInfo / getApplicationInfo，组件信息查询（getActivityInfo 等）留待后续。
+ * 被用于读写。拦截 getPackageInfo / getApplicationInfo（按包名）与 getActivityInfo / getServiceInfo /
+ * getProviderInfo / getReceiverInfo（按 ComponentName），其余透传。
  */
 object PackageManagerHook {
     @Volatile private var installed = false
@@ -60,15 +62,25 @@ object PackageManagerHook {
         host: Context, isVirtual: (String) -> Boolean, resolve: (String) -> VirtualApp?,
         name: String, args: Array<Any?>?,
     ): Box? {
-        val pkg = args?.getOrNull(0) as? String ?: return null
-        if (!isVirtual(pkg)) return null
-        val app = resolve(pkg) ?: return null
-        // 兼容多版本：flags 在 API 33 起是 long，之前是 int；第一个数字参数即 flags（userId 在其后）
-        val flags = args.drop(1).filterIsInstance<Number>().firstOrNull()?.toInt() ?: 0
-        return when (name) {
-            "getPackageInfo" -> VirtualAppInfo.packageInfo(host, app, flags)?.let { Box(it) }
-            "getApplicationInfo" -> VirtualAppInfo.applicationInfo(host, app)?.let { Box(it) }
-            else -> null
+        val first = args?.getOrNull(0) ?: return null
+        when (name) {
+            "getPackageInfo", "getApplicationInfo" -> {
+                val pkg = first as? String ?: return null
+                if (!isVirtual(pkg)) return null
+                val app = resolve(pkg) ?: return null
+                // 兼容多版本：flags 在 API 33 起是 long，之前是 int；第一个数字参数即 flags（userId 在其后）
+                val flags = args.drop(1).filterIsInstance<Number>().firstOrNull()?.toInt() ?: 0
+                return if (name == "getPackageInfo") VirtualAppInfo.packageInfo(host, app, flags)?.let { Box(it) }
+                else VirtualAppInfo.applicationInfo(host, app)?.let { Box(it) }
+            }
+            // 组件信息查询：第一个参数是 ComponentName（androidx.startup 的 InitializationProvider 走 getProviderInfo）
+            "getActivityInfo", "getServiceInfo", "getProviderInfo", "getReceiverInfo" -> {
+                val comp = first as? ComponentName ?: return null
+                if (!isVirtual(comp.packageName)) return null
+                val app = resolve(comp.packageName) ?: return null
+                return VirtualAppInfo.componentInfo(host, app, name, comp.className)?.let { Box(it) }
+            }
+            else -> return null
         }
     }
 }
