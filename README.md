@@ -19,7 +19,8 @@ gradle wrapper
 3. [~] 运行**未修改**的普通 APK
    - [x] 3a：解除隐藏 API 限制 + 桩 Activity + Instrumentation 替换（`HookInstrumentation`），启动普通 APK 的入口 Activity，替换 Resources/Theme（待真机验证）
    - [ ] 3b：Application 生命周期、Activity 间跳转（Hook startActivity）、桩池（launchMode/主题）
-   - [ ] 3c：文件路径重定向、getPackageName 等伪装、native so
+   - [x] 数据隔离：`VirtualContext` 重定向 files/cache/databases/SharedPreferences 到实例目录（待真机验证）
+   - [ ] 3c：getPackageName 等伪装、getApplicationContext、外部存储、native so
 4. [ ] Service / Broadcast / ContentProvider / 通知
 5. [ ] Native 层路径重定向与设备信息伪装
 6. [ ] 兼容性适配（隐藏 API 限制、64/32 位 so）

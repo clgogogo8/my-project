@@ -58,6 +58,9 @@ class HookInstrumentation(private val ctx: Context, private val base: Instrument
             setField(wrapper, activity, "mTheme", null)
             setField(wrapper, activity, "mThemeResource", 0)
             activity.setTheme(rt.app.themeRes.takeIf { it != 0 } ?: android.R.style.Theme_Material_Light_DarkActionBar)
+            // 最后一步：把 Activity 的 baseContext 包一层，重定向数据目录（ContextWrapper.mBase 不是 final）
+            setField(android.content.ContextWrapper::class.java, activity, "mBase",
+                VirtualContext(baseCtx, instance, VirtualCore.dataDir(rt.app)))
         } catch (t: Throwable) {
             Log.e(TAG, "patch failed", t)
         }
