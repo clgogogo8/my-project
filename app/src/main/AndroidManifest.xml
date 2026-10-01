@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="MultiOpen" android:theme="@style/Theme.AppCompat.Light.DarkActionBar">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- 桩 Activity：每个虚拟进程/实例对应一个，后续扩展为多个 -->
+        <activity android:name=".ProxyActivity" android:exported="false" />
+    </application>
+</manifest>
