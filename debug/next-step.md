@@ -5,31 +5,30 @@
 
 ---
 
-## 目标 commit：见最新（两条诊断日志）
+## 目标 commit：见最新（引入 Pine ART hook，拦 getInstallerPackageName）
 
-## 背景 / 本轮目的（纯诊断，不改行为）
-- ServiceManager 包装生效了，但登录页仍 SIGTRAP@libcronet，`getInstallerPackageName("com.tencent.mm")` 仍打到真实系统。
-- 要确认二选一：① 微信根本没走我们包装的 binder（直连真实 binder）；② 走了但 asInterface 没采用我们的接口。
-- 加了两条日志：
-  - `wrapped package binder: queryLocalInterface -> ourIpm`（微信经过我们包装 binder 时打）
-  - `intercept getInstallerPackageName(...)`（我们的拦截被调到时打）
+## 背景 / 改了什么（B 路线第一步）
+- 诊断确认：微信绕过我们所有 PMS 代理，经 `ApplicationPackageManager.getInstallerPackageName` 直接打真实系统，
+  虚拟包 `com.tencent.mm` 查不到 → Unknown package → Cronet BuildInfo 崩（SIGTRAP@libcronet）。
+- 本轮用 ART 方法级 hook（Pine，现成 .so + Java API）hook `ApplicationPackageManager.getInstallerPackageName`，
+  对虚拟包直接返回宿主 installer、不下调 binder。无论微信走哪个代理都经过这个 Java 方法，应能从源头挡住。
+- **最大未知：Pine 依赖能不能拉到、能不能在 Android 14 / 这台小米上加载并成功 hook。** 全程 try/catch。
 
 ## 步骤
-1. 编译 `:app`，装宿主，`pm clear com.example.multiopen` 清数据。
-2. 添加微信 APK，打开，等欢迎页；点“登录”，等它崩/重启。
-3. 抓 logcat：`adb logcat MultiOpen:I AndroidRuntime:E *:S`
+1. 编译 `:app`。**如果 Gradle 拉不到 `top.canyie.pine:core:0.3.0`（依赖解析失败），立刻停下，把完整报错贴回**
+   （可能要换版本或仓库，我据此调整；不要自己改依赖）。
+2. 编译过了就装宿主、`pm clear`、打开微信、等欢迎页、点“登录”、停留观察 10 秒以上。
+3. 抓 logcat：`adb logcat MultiOpen:I ActivityTaskManager:I AndroidRuntime:E *:S`
 
-## 本轮重点看（就看这两条日志在不在，这是关键）
-1. 整个过程里有没有出现 `wrapped package binder: queryLocalInterface -> ourIpm`？出现几次？
-2. 点“登录”崩溃前后，有没有出现 `intercept getInstallerPackageName(com.tencent.mm)`？
-3. `Unknown package: com.tencent.mm` 还在不在（应该还在，除非 2 出现了）。
-4. 这两条的**有/无组合**最重要，请明确写出来：
-   - 都没有 → 微信直连真实 binder，绕过了 ServiceManager 缓存。
-   - 有 queryLocalInterface、没有 intercept → asInterface 没采用我们的接口。
-   - 两条都有但还崩 → 拦截被调到了但没挡住。
-5. 其余照常（崩不崩、native 摘要可略，和上轮同位置就只说“同上”）。
+## 本轮重点看
+1. **编译**：Pine 依赖有没有拉到、编译过没过（没过贴报错，这是本轮最可能的卡点）。
+2. 运行是否出现 `ART hook installed: ApplicationPackageManager.getInstallerPackageName`？还是 `ART hook install failed`（贴异常）？
+3. 点“登录”后：`Unknown package: com.tencent.mm` 还出现吗？还 SIGTRAP@libcronet 吗？
+4. **登录页（MobileInputUI）能不能稳定停住**？能看到就描述、截图。
+5. 若登录页稳住，继续点页面元素（如“切换扫码登录”），看有没有新崩溃 / 用到 singleTask 桩。
+6. 若 Pine 加载失败或 hook 没挡住，把相关异常/日志贴回，我换 hook 方案（SandHook/LSPlant 或手写）。
 
 ## 写回 debug/last-run.md（覆盖），然后
 ```
-git add debug/last-run.md && git commit -m "test run: PMS 拦截诊断日志" && git push
+git add debug/last-run.md && git commit -m "test run: Pine ART hook getInstallerPackageName" && git push
 ```

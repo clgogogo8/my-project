@@ -26,6 +26,8 @@ class MultiOpenApp : Application() {
             PackageManagerHook.install(this, isVirtual, resolve)
             // 更底层地包装 ServiceManager 的 package binder，覆盖微信自己从 ServiceManager 另拿 binder 的路径
             ServiceManagerHook.install(this, isVirtual, resolve)
+            // ART 方法级 hook：拦微信绕过代理、经 ApplicationPackageManager.getInstallerPackageName 打真实系统的调用
+            ArtHook.install(this, isVirtual)
         } catch (t: Throwable) { Log.e(TAG, "hook install failed", t) }
     }
 
